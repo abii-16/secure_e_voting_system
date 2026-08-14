@@ -1,276 +1,214 @@
-# 🗳️ Secure E-Voting System
+# 🗳️ Post-Quantum Secure E-Voting System
 
-<p align="center">
-
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-Web_Framework-000000?style=for-the-badge&logo=flask&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
-![Post Quantum](https://img.shields.io/badge/Post--Quantum-Cryptography-6A5ACD?style=for-the-badge)
-![Blockchain](https://img.shields.io/badge/Blockchain-SHA3-orange?style=for-the-badge)
-![Face Recognition](https://img.shields.io/badge/Face-Recognition-success?style=for-the-badge)
-![OCR](https://img.shields.io/badge/OCR-Tesseract-blue?style=for-the-badge)
-
-</p>
-
-<p align="center">
-
-![Status](https://img.shields.io/badge/Status-Completed-brightgreen)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Flask](https://img.shields.io/badge/Framework-Flask-red)
-![Database](https://img.shields.io/badge/Database-MongoDB-success)
-
-</p>
+A secure and quantum-resistant electronic voting platform that combines Post-Quantum Cryptography (PQC), Multi-Factor Authentication (MFA), Blockchain, Mixnets, Homomorphic Encryption, and Threshold Decryption to ensure voter privacy, vote integrity, and end-to-end verifiability. The system is implemented using Python, Flask, and MongoDB Atlas.
 
 ---
 
-## 📌 Overview
+## 🚀 Features
 
-A **prototype secure electronic voting system** demonstrating the integration of modern authentication and cryptographic techniques for digital voting.
+* 🔐 **Post-Quantum Security**
 
-The project combines:
+  * Dilithium digital signatures
+  * Kyber encryption
+* 👤 **Multi-Factor Authentication**
 
-- 🗳️ Secure voter registration
-- 👤 Face Recognition
-- 🪪 Aadhaar OCR Verification
-- ✉️ Email OTP Authentication
-- 🔐 Password Hashing (bcrypt)
-- 🛡️ Simulated Post-Quantum Cryptography
-- 🔄 Mixnet-based Vote Anonymization
-- ⛓️ Blockchain-inspired Audit Trail
-- ➕ Homomorphic Vote Counting
-- 🔑 Threshold Decryption
+  * Password authentication
+  * Email OTP verification
+  * Face recognition
+  * Device fingerprinting
+* 🕵️ **Anonymous Voting**
 
-> **Note:** This project is intended as a **research and educational prototype** to demonstrate the workflow of a secure e-voting system. Certain cryptographic components (such as Dilithium and Kyber) are **simulated** for demonstration purposes and are **not intended for production deployment**.
+  * 3-node Mixnet vote shuffling
+* ⛓️ **Blockchain Audit Trail**
 
----
+  * SHA3-based tamper-evident ledger
+* 📊 **Privacy-Preserving Vote Counting**
 
-## 🏗️ Architecture
+  * Homomorphic tallying using Paillier encryption
+* 🔑 **Threshold Decryption**
 
-```
-Browser
-     │
-     ▼
-Flask Web Application
-(app.py)
-     │
- REST API
-     │
-     ▼
-Crypto Backend
-(server.py)
-     │
-     ▼
-MongoDB Atlas
-```
+  * Distributed trust with 3-of-5 authority approval
+* ✅ **End-to-End Verification**
+
+  * Receipt-based vote verification
+* 🧾 **Digital Certificates**
+
+  * Certificate Authority for voter credentials
 
 ---
 
-## 📂 Project Structure
+## 🏗️ System Architecture
 
-```
-Secure-E-Voting-System
-│
-├── app.py
-├── test.py
-├── templates/
-│
-├── voting_system_crypto/
-│   ├── backend/
-│   ├── frontend/
-│   ├── run_server.py
-│   ├── run_client.py
-│   ├── demo_all_phases.py
-│   ├── test_imports.py
-│   ├── test_server.py
-│   └── requirements.txt
-│
-├── requirements.txt
-├── README.md
-└── .gitignore
-```
+The application consists of two major layers:
+
+### Frontend Layer
+
+* Flask-based web interface
+* Voter, Admin, and Election Official portals
+* Session management and authentication
+* Face recognition and OTP verification
+
+### Cryptographic Backend
+
+* REST API-based secure voting pipeline
+* Post-quantum cryptography operations
+* Mixnet anonymization
+* Blockchain storage
+* Homomorphic vote counting
+* Threshold decryption services
+
+Both layers connect to a shared MongoDB Atlas database.
 
 ---
 
-## 🔒 Security Components
+## 🔄 Voting Workflow
 
-| Component | Technology |
-|-----------|------------|
-| Authentication | Password + OTP + Face Recognition |
-| Password Hashing | bcrypt |
-| OCR | Tesseract |
-| Face Recognition | face_recognition |
-| Database | MongoDB Atlas |
-| Digital Signature | Dilithium (Simulation) |
-| Encryption | Kyber (Simulation) |
-| Vote Privacy | Mixnet |
-| Audit Trail | Blockchain |
-| Vote Counting | Paillier Homomorphic Encryption |
-| Trust Distribution | Threshold Decryption |
+### 1. Voter Registration
+
+* Aadhaar verification using OCR
+* Face capture and biometric encoding
+* Password hashing with bcrypt
+* Dilithium keypair generation
+* Certificate issuance by Certificate Authority
+
+### 2. Secure Login
+
+* Password verification
+* OTP authentication
+* Face recognition matching
+* Device fingerprint validation
+
+### 3. Vote Casting
+
+* Vote creation and signing using Dilithium
+* Encryption using Kyber
+* Receipt generation for verification
+
+### 4. Vote Anonymization
+
+* Multi-layer Mixnet shuffling
+* Re-encryption and randomization
+* Removal of voter-vote linkage
+
+### 5. Blockchain Recording
+
+* Vote hashes stored in blockchain blocks
+* SHA3-based proof-of-work integrity checks
+
+### 6. Vote Verification
+
+* Receipt lookup and inclusion proof
+* End-to-end vote confirmation
+
+### 7. Homomorphic Counting
+
+* Encrypted vote aggregation
+* No individual vote decryption
+
+### 8. Threshold Decryption
+
+* 3-of-5 authority approval model
+* Distributed key reconstruction
+
+### 9. Result Publication
+
+* Final tally generation
+* Integrity verification
+* Election result publication
 
 ---
 
-## ⚙️ Installation
+## 🔒 Security Mechanisms
 
-Clone the repository
+| Property                    | Mechanism                       |
+| --------------------------- | ------------------------------- |
+| Voter Authenticity          | Dilithium Digital Signatures    |
+| Vote Confidentiality        | Kyber Encryption                |
+| Voter Anonymity             | Mixnet Shuffling                |
+| Vote Integrity              | SHA3 Blockchain                 |
+| Privacy-Preserving Counting | Paillier Homomorphic Encryption |
+| Distributed Trust           | Threshold Decryption            |
+| Vote Verification           | Receipt-Based Verification      |
+| Identity Assurance          | Aadhaar OCR + Face Recognition  |
+| Quantum Resistance          | Dilithium + Kyber               |
+
+---
+
+## 🛠️ Technology Stack
+
+| Category                  | Technology                    |
+| ------------------------- | ----------------------------- |
+| Backend                   | Flask                         |
+| Database                  | MongoDB Atlas                 |
+| Post-Quantum Cryptography | Dilithium, Kyber (simulation) |
+| Homomorphic Encryption    | Paillier                      |
+| Authentication            | bcrypt, pyotp                 |
+| Biometrics                | face_recognition              |
+| OCR                       | pytesseract                   |
+| Cryptography              | PyCryptodome, cryptography    |
+| Email Services            | SMTP                          |
+| CORS                      | flask-cors                    |
+
+---
+
+## 📦 Installation
 
 ```bash
-git clone https://github.com/raveena31/secure-e-voting-system.git
-
-cd secure-e-voting-system
-```
-
-Create virtual environment
-
-```bash
-python -m venv venv
-```
-
-Activate
-
-### Windows
-
-```bash
-venv\Scripts\activate
-```
-
-### Linux/macOS
-
-```bash
-source venv/bin/activate
-```
-
-Install dependencies
-
-```bash
+git clone https://github.com/abii-16/secure_e_voting_system.git
+cd secure_e_voting_system
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🔑 Configure Environment Variables
+## ▶️ Running the Application
 
-Create a `.env` file in the project root.
-
-```env
-FLASK_SECRET_KEY=
-
-MONGO_URI=
-
-ELECTION_API_URL=http://localhost:5000
-
-SENDER_EMAIL=
-
-SENDER_PASSWORD=
-```
-
----
-
-## ▶️ Run the Project
-
-### Start Crypto Backend
+### Start the Cryptographic Backend
 
 ```bash
-python voting_system_crypto/run_server.py
+python voting_system_crypto/backend/server.py
 ```
 
-### Start Flask Application
-
-Open another terminal.
+### Start the Frontend Application
 
 ```bash
 python app.py
 ```
 
-Open
+---
 
-```
-http://localhost:8000
-```
+## 👥 User Roles
+
+### Voter
+
+* Register with Aadhaar and facial verification
+* Login through 4-factor authentication
+* Cast votes securely
+* Verify vote using receipt hash
+
+### Admin
+
+* Manage elections and candidates
+* View blockchain records
+* Monitor election status
+
+### Election Official
+
+* Participate in threshold decryption
+* Approve result decryption process
+* Monitor election integrity
 
 ---
 
-## 👤 Voter Workflow
+## ⚠️ Current Limitations
 
-```
-Register
-   │
-   ▼
-Login
-   │
-   ▼
-Face Verification
-   │
-   ▼
-OTP Verification
-   │
-   ▼
-Cast Vote
-   │
-   ▼
-Receipt Generation
-```
+* Dilithium and Kyber are simulated and can be replaced with real NIST-standard PQC implementations such as `liboqs-python`.
+* Threshold sharing currently uses XOR-based splitting instead of Shamir's Secret Sharing.
+* Mixnet and Zero-Knowledge Proof implementations are simplified for demonstration purposes.
+* Sensitive credentials should be moved to environment variables before deployment.
 
 ---
 
-## 👨‍💼 Admin Workflow
+## 📌 Project Objective
 
-```
-Admin Login
-      │
-      ▼
-Dashboard
-      │
-      ▼
-Manage Elections
-      │
-      ▼
-View Blockchain
-      │
-      ▼
-Publish Results
-```
-
----
-
-## 🛠️ Technologies Used
-
-- Python
-- Flask
-- MongoDB Atlas
-- PyMongo
-- OpenCV
-- face_recognition
-- Tesseract OCR
-- bcrypt
-- Cryptography
-- PyCryptodome
-- Paillier Homomorphic Encryption
-- PyOTP
-- Flask-CORS
-
----
-
-## 🚀 Future Enhancements
-
-- Real Dilithium & Kyber using liboqs
-- JWT Authentication
-- Docker Deployment
-- Kubernetes Deployment
-- CI/CD Pipeline
-- Shamir Secret Sharing
-- Verifiable Mixnets
-- Production-grade Zero Knowledge Proofs
-
----
-
-## 👩‍💻 Author
-
-**Raveena**
-
-B.Tech Computer Science and Engineering
-
-VIT Chennai
-
----
-
-## ⭐ If you found this project useful, consider giving it a Star!
+This project demonstrates how post-quantum cryptography, blockchain, biometric authentication, homomorphic encryption, and distributed trust mechanisms can be integrated into a secure electronic voting system capable of resisting both classical and future quantum computing threats.
