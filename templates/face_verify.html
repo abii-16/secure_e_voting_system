@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Verification - Secure E-Voting</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top, #1a73e8 0, #0b1020 55%, #000 100%);
+            color: #e3f2fd;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.78);
+            border-radius: 18px;
+            padding: 26px 28px 24px;
+            max-width: 820px;
+            width: 92%;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0 0 6px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: #b0bec5;
+            margin-bottom: 18px;
+            line-height: 1.5;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+        .panel {
+            background: rgba(6, 18, 32, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .panel-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: #81d4fa;
+            margin-bottom: 10px;
+        }
+        video, canvas {
+            width: 100%;
+            border-radius: 12px;
+            background: #000;
+        }
+        .actions {
+            margin-top: 12px;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn {
+            border-radius: 999px;
+            padding: 9px 20px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background: #1a73e8;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        .btn-secondary {
+            background: transparent;
+            color: #e3f2fd;
+            border: 1px solid rgba(227,242,253,0.6);
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .error {
+            background: rgba(198, 40, 40, 0.12);
+            border-radius: 10px;
+            border: 1px solid rgba(244, 67, 54, 0.65);
+            color: #ffcdd2;
+            padding: 8px 10px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+        .tips {
+            font-size: 12px;
+            color: #b0bec5;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+        @media (max-width: 800px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Face Verification</h1>
+        <div class="subtitle">
+            Step 3 of 3: Capture your face to complete authentication.
+        </div>
+
+        {% if error %}
+            <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="{{ action_url or '/verify_face' }}">
+            <input type="hidden" name="aadhaar" value="{{ aadhaar }}">
+
+            <div class="grid">
+                <div class="panel">
+                    <div class="panel-title">Live Camera</div>
+                    <video id="video" autoplay playsinline></video>
+                    <div class="actions">
+                        <button type="button" class="btn btn-secondary" onclick="capture()">Capture Face</button>
+                        <a class="btn btn-secondary" href="/login">Back</a>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-title">Captured Frame</div>
+                    <canvas id="canvas" style="display:block;"></canvas>
+                    <input type="hidden" name="face_image" id="face_image">
+                    <div class="actions">
+                        <button type="submit" class="btn btn-primary">Verify & Continue</button>
+                        <a class="btn btn-secondary" href="/">Home</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tips">
+                Tips: Use good lighting, face the camera, remove mask/helmet, and keep your face centered.
+            </div>
+        </form>
+    </div>
+
+<script>
+const video = document.getElementById('video');
+
+navigator.mediaDevices.getUserMedia({video:true})
+.then(stream => video.srcObject = stream)
+.catch(err => alert("Camera access denied!"));
+
+function capture(){
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 480;
+    canvas.height = 360;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const data = canvas.toDataURL('image/png');
+    document.getElementById('face_image').value = data;
+}
+</script>
+
+</body>
+</html>

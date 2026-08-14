@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Registration - Secure E-Voting</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background: radial-gradient(
+          circle at top,
+          #1a73e8 0,
+          #0b1020 55%,
+          #000 100%
+        );
+        color: #e3f2fd;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .card {
+        background: rgba(0, 0, 0, 0.78);
+        border-radius: 18px;
+        padding: 26px 28px 24px;
+        max-width: 560px;
+        width: 92%;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 6px;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: #b0bec5;
+        margin-bottom: 18px;
+        line-height: 1.5;
+      }
+      label {
+        font-size: 13px;
+        display: block;
+        margin-bottom: 6px;
+      }
+      input {
+        width: 100%;
+        border-radius: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(6, 18, 32, 0.9);
+        color: #e3f2fd;
+        font-size: 13px;
+        box-sizing: border-box;
+      }
+      .field-group {
+        margin-bottom: 12px;
+      }
+      .actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        border-radius: 999px;
+        padding: 9px 20px;
+        border: none;
+        font-size: 14px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn-primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #1557b0;
+      }
+      .btn-secondary {
+        background: transparent;
+        color: #e3f2fd;
+        border: 1px solid rgba(227, 242, 253, 0.6);
+      }
+      .btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .msg {
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .success {
+        background: rgba(46, 125, 50, 0.18);
+        border: 1px solid rgba(102, 187, 106, 0.5);
+        color: #c8e6c9;
+      }
+      .error {
+        background: rgba(198, 40, 40, 0.12);
+        border: 1px solid rgba(244, 67, 54, 0.65);
+        color: #ffcdd2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin Registration</h1>
+      <div class="subtitle">
+        Create an admin account to manage elections and candidates.
+      </div>
+
+      {% if success %}
+      <div class="msg success">{{ success }}</div>
+      {% endif %} {% if error %}
+      <div class="msg error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/admin/register">
+        <div class="field-group">
+          <label for="aadhaar">Aadhaar</label>
+          <input id="aadhaar" type="text" name="aadhaar" required />
+        </div>
+        <div class="field-group">
+          <label for="name">Name</label>
+          <input id="name" type="text" name="name" required />
+        </div>
+        <div class="field-group">
+          <label for="password">Password</label>
+          <input id="password" type="password" name="password" required />
+        </div>
+        <div class="field-group">
+          <label for="confirm_password">Confirm Password</label>
+          <input
+            id="confirm_password"
+            type="password"
+            name="confirm_password"
+            required
+          />
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary">Create Admin</button>
+          <a href="/admin/login" class="btn btn-secondary"
+            >Back to Admin Login</a
+          >
+        </div>
+      </form>
+    </div>
+  </body>
+</html>

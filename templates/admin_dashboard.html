@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard - Secure E-Voting</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+        background: radial-gradient(
+          circle at top,
+          #1a73e8 0,
+          #0b1020 55%,
+          #000 100%
+        );
+        color: #e3f2fd;
+        min-height: 100vh;
+        box-sizing: border-box;
+      }
+      .container {
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+      .card {
+        background: rgba(0, 0, 0, 0.78);
+        border-radius: 18px;
+        padding: 22px;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 6px;
+      }
+      h3 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: #b0bec5;
+        margin-bottom: 14px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 14px;
+      }
+      input {
+        width: 100%;
+        border-radius: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(6, 18, 32, 0.9);
+        color: #e3f2fd;
+        font-size: 13px;
+        box-sizing: border-box;
+        margin-bottom: 8px;
+      }
+      pre {
+        background: rgba(6, 18, 32, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 10px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+      }
+      .btn {
+        border-radius: 999px;
+        padding: 9px 16px;
+        border: none;
+        font-size: 14px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        margin-right: 8px;
+        margin-top: 6px;
+      }
+      .btn-primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #1557b0;
+      }
+      .btn-secondary {
+        background: transparent;
+        color: #e3f2fd;
+        border: 1px solid rgba(227, 242, 253, 0.6);
+      }
+      .btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .msg {
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      .success {
+        background: rgba(46, 125, 50, 0.18);
+        border: 1px solid rgba(102, 187, 106, 0.5);
+        color: #c8e6c9;
+      }
+      .error {
+        background: rgba(198, 40, 40, 0.12);
+        border: 1px solid rgba(244, 67, 54, 0.65);
+        color: #ffcdd2;
+      }
+      .links a {
+        color: #81d4fa;
+        margin-right: 12px;
+      }
+      .result-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+      .result-item {
+        background: rgba(6, 18, 32, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 10px;
+      }
+      .result-item .name {
+        font-size: 13px;
+        color: #b0bec5;
+      }
+      .result-item .count {
+        font-size: 24px;
+        font-weight: 700;
+        color: #e3f2fd;
+      }
+      .winner {
+        font-size: 20px;
+        font-weight: 700;
+        color: #81d4fa;
+        margin-top: 8px;
+      }
+      .small-scroll {
+        max-height: 120px;
+        overflow: auto;
+      }
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
+      .action-btn {
+        background: #1a73e8;
+        color: #fff;
+        padding: 12px 16px;
+        border-radius: 10px;
+        text-decoration: none;
+        text-align: center;
+        font-size: 14px;
+        cursor: pointer;
+        border: none;
+        transition: background 0.2s;
+      }
+      .action-btn:hover {
+        background: #1557b0;
+      }
+      .action-btn-secondary {
+        background: transparent;
+        border: 1px solid #81d4fa;
+        color: #81d4fa;
+      }
+      .action-btn-secondary:hover {
+        background: rgba(129, 212, 250, 0.1);
+      }
+      .reset-section {
+        background: rgba(198, 40, 40, 0.08);
+        border: 1px solid rgba(244, 67, 54, 0.3);
+        border-radius: 10px;
+        padding: 14px;
+        margin-top: 10px;
+      }
+      .reset-section h4 {
+        color: #ffcdd2;
+        margin: 0 0 10px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h1>Admin Dashboard</h1>
+        <div class="subtitle">
+          Run counting and view final results instantly.
+        </div>
+
+        {% if message %}
+        <div class="msg success">{{ message }}</div>
+        {% endif %} {% if error %}
+        <div class="msg error">{{ error }}</div>
+        {% endif %}
+
+        <div class="grid">
+          <div>
+            <h3>Start Election</h3>
+            <form method="post" action="/admin/start-election">
+              <input
+                type="text"
+                name="election_id"
+                placeholder="Election ID (optional)"
+              />
+              <input type="text" name="title" placeholder="Election Title" />
+              <button type="submit" class="btn btn-primary">
+                Start Election
+              </button>
+            </form>
+          </div>
+
+          <div>
+            <h3>End Election</h3>
+            <form method="post" action="/admin/end-election">
+              <input
+                type="text"
+                name="election_id"
+                placeholder="Election ID (optional)"
+              />
+              <button type="submit" class="btn btn-secondary">
+                End Election
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <h3>Trigger Counting</h3>
+        <form method="post" action="/admin/dashboard">
+          <button type="submit" class="btn btn-primary">
+            Trigger Counting
+          </button>
+          <a class="btn btn-secondary" href="/">Back to Home</a>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Election Results</h3>
+        {% if count_results %}
+        <div class="result-grid">
+          {% for candidate, votes in count_results.items() %}
+          <div class="result-item">
+            <div class="name">{{ candidate }}</div>
+            <div class="count">{{ votes }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% if winner %}
+        <div class="winner">Winner: {{ winner }}</div>
+        {% endif %} {% else %}
+        <div class="subtitle">
+          No result yet. Click <b>Trigger Counting</b>.
+        </div>
+        {% endif %}
+      </div>
+
+      {% if extra_details or encrypted_count or dashboard or status %}
+      <div class="card">
+        <h3>Extra Details</h3>
+        <div class="small-scroll">
+          {% if extra_details %}
+          <pre>{{ extra_details }}</pre>
+          {% endif %} {% if encrypted_count %}
+          <pre>{{ encrypted_count }}</pre>
+          {% endif %} {% if dashboard %}
+          <pre>{{ dashboard }}</pre>
+          {% endif %} {% if status %}
+          <pre>{{ status }}</pre>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="card links">
+        <h3>Admin Actions</h3>
+        <div class="action-grid">
+          <a href="/admin/add-candidate" class="action-btn"
+            >Add / Manage Candidates</a
+          >
+          <a href="/admin/manage-officials" class="action-btn"
+            >Approve / Delete Officials</a
+          >
+          <a
+            href="/admin/view-blockchain"
+            class="action-btn action-btn-secondary"
+            >View Blockchain</a
+          >
+          <a
+            href="/admin/view-encrypted-votes"
+            class="action-btn action-btn-secondary"
+            >View Encrypted Votes</a
+          >
+        </div>
+
+        <div class="reset-section">
+          <h4>⚠️ Danger Zone: Reset Election</h4>
+          <p style="font-size: 12px; color: #ffcdd2; margin: 0 0 8px">
+            Clear all votes, official approvals, and results. Requires admin
+            password.
+          </p>
+          <form
+            method="post"
+            action="/admin/reset-election"
+            style="
+              display: flex;
+              gap: 8px;
+              flex-wrap: wrap;
+              align-items: center;
+            "
+          >
+            <input
+              type="password"
+              name="reset_password"
+              placeholder="Enter your admin password"
+              required
+              style="
+                flex: 1;
+                min-width: 200px;
+                max-width: 250px;
+                margin-bottom: 0;
+              "
+            />
+            <button
+              type="submit"
+              class="action-btn"
+              style="
+                background: #d32f2f;
+                padding: 12px 20px;
+                flex: 0 1 auto;
+                margin: 0;
+              "
+            >
+              Reset Election
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

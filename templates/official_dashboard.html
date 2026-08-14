@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Official Dashboard - Secure E-Voting</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+        background: radial-gradient(
+          circle at top,
+          #1a73e8 0,
+          #0b1020 55%,
+          #000 100%
+        );
+        color: #e3f2fd;
+        min-height: 100vh;
+        box-sizing: border-box;
+      }
+      .card {
+        max-width: 980px;
+        margin: 0 auto;
+        background: rgba(0, 0, 0, 0.78);
+        border-radius: 18px;
+        padding: 22px;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      .subtitle {
+        color: #b0bec5;
+        font-size: 13px;
+        margin-bottom: 10px;
+      }
+      .error {
+        background: rgba(198, 40, 40, 0.12);
+        border: 1px solid rgba(244, 67, 54, 0.65);
+        color: #ffcdd2;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      pre {
+        background: rgba(6, 18, 32, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 10px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+      }
+      label {
+        font-size: 13px;
+        display: block;
+        margin-bottom: 6px;
+      }
+      input {
+        width: 100%;
+        border-radius: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(6, 18, 32, 0.9);
+        color: #e3f2fd;
+        font-size: 13px;
+        box-sizing: border-box;
+        margin-bottom: 10px;
+        max-width: 320px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .btn {
+        border-radius: 999px;
+        padding: 9px 20px;
+        border: none;
+        font-size: 14px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn-primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #1557b0;
+      }
+      .btn-secondary {
+        background: transparent;
+        color: #e3f2fd;
+        border: 1px solid rgba(227, 242, 253, 0.6);
+      }
+      .btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Official Dashboard</h1>
+      <div class="subtitle">
+        Threshold decryption approvals are required from at least 3 officials.
+      </div>
+
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}
+
+      <p><strong>Official ID:</strong> {{ official_id }}</p>
+      <p><strong>Election ID:</strong> {{ election_id or 'Not linked yet' }}</p>
+
+      <p><strong>Secret Key Share:</strong></p>
+      <pre>
+{{ key_share or 'No key share assigned yet. Ask admin to approve your registration.' }}</pre
+      >
+
+      <pre>{{ status }}</pre>
+
+      <form method="post" action="/official/approve-decryption">
+        <input type="hidden" name="official_id" value="{{ official_id }}" />
+        <label for="election_id">Election ID (optional)</label>
+        <input id="election_id" type="text" name="election_id" />
+        <label for="secret_key"
+          ><strong>Your Secret Key (required)</strong></label
+        >
+        <input
+          id="secret_key"
+          type="password"
+          name="secret_key"
+          placeholder="Enter your secret key from registration"
+          required
+        />
+
+        <div class="actions">
+          <button type="submit" class="btn btn-primary">
+            Approve Decryption
+          </button>
+          <a href="/" class="btn btn-secondary">Back to Home</a>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>

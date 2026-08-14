@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verify OTP - Secure E-Voting</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top, #1a73e8 0, #0b1020 55%, #000 100%);
+            color: #e3f2fd;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.78);
+            border-radius: 18px;
+            padding: 26px 28px 24px;
+            max-width: 520px;
+            width: 92%;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0 0 6px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: #b0bec5;
+            margin-bottom: 18px;
+            line-height: 1.5;
+        }
+        label {
+            font-size: 13px;
+            display: block;
+            margin-bottom: 6px;
+        }
+        input {
+            width: 100%;
+            border-radius: 10px;
+            padding: 10px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(6, 18, 32, 0.9);
+            color: #e3f2fd;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #42a5f5;
+            box-shadow: 0 0 0 1px rgba(66, 165, 245, 0.4);
+        }
+        .actions {
+            margin-top: 16px;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn {
+            border-radius: 999px;
+            padding: 9px 20px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background: #1a73e8;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        .btn-secondary {
+            background: transparent;
+            color: #e3f2fd;
+            border: 1px solid rgba(227,242,253,0.6);
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .error {
+            background: rgba(198, 40, 40, 0.12);
+            border-radius: 10px;
+            border: 1px solid rgba(244, 67, 54, 0.65);
+            color: #ffcdd2;
+            padding: 8px 10px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+        .code {
+            background: rgba(0,0,0,0.4);
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Verify OTP</h1>
+        <div class="subtitle">
+            Step 2 of 3: We sent a one-time password to your registered email.
+            Enter the 6-digit code to continue.
+        </div>
+
+        {% if error %}
+            <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/verify_otp">
+            <input type="hidden" name="aadhaar" value="{{ aadhaar }}">
+
+            <label for="otp">OTP Code</label>
+            <input id="otp" type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" required>
+
+            <div class="actions">
+                <button type="submit" class="btn btn-primary">Verify OTP</button>
+                <a class="btn btn-secondary" href="/login">Back</a>
+            </div>
+        </form>
+
+        <div class="subtitle" style="margin-top:14px;">
+            For security, OTP is tied to your device/browser in the next step.
+        </div>
+    </div>
+
+</body>
+</html>

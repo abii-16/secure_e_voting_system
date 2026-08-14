@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cast Your Vote - Secure E-Voting</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top, #1a73e8 0, #061522 55%, #000 100%);
+            color: #e0f2f1;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .wrapper {
+            max-width: 900px;
+            width: 92%;
+            display: grid;
+            grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+            gap: 24px;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.78);
+            border-radius: 18px;
+            padding: 26px 28px 24px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0 0 4px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: #b0bec5;
+            margin-bottom: 18px;
+        }
+        .badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(76, 175, 80, 0.15);
+            color: #a5d6a7;
+            border: 1px solid rgba(129, 199, 132, 0.5);
+            margin-bottom: 12px;
+        }
+        label {
+            font-size: 13px;
+            display: block;
+            margin-bottom: 6px;
+        }
+        select, textarea {
+            width: 100%;
+            border-radius: 10px;
+            padding: 10px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(6, 18, 32, 0.9);
+            color: #e0f2f1;
+            font-size: 13px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        select:focus, textarea:focus {
+            outline: none;
+            border-color: #42a5f5;
+            box-shadow: 0 0 0 1px rgba(66, 165, 245, 0.4);
+        }
+        textarea {
+            min-height: 90px;
+        }
+        .field-group {
+            margin-bottom: 16px;
+        }
+        .actions {
+            margin-top: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            border-radius: 999px;
+            padding: 9px 20px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: #1a73e8;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        .btn-secondary {
+            background: transparent;
+            color: #e0f2f1;
+            border: 1px solid rgba(176, 190, 197, 0.5);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .error {
+            background: rgba(198, 40, 40, 0.12);
+            border-radius: 10px;
+            border: 1px solid rgba(244, 67, 54, 0.65);
+            color: #ffcdd2;
+            padding: 8px 10px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+        .info-card {
+            font-size: 12px;
+            line-height: 1.6;
+            color: #b0bec5;
+        }
+        .info-card h2 {
+            font-size: 14px;
+            margin-top: 0;
+            margin-bottom: 8px;
+            color: #eceff1;
+        }
+        ul {
+            padding-left: 18px;
+            margin: 4px 0 10px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .tag {
+            display: inline-block;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: rgba(33, 150, 243, 0.15);
+            color: #81d4fa;
+            border: 1px solid rgba(129, 212, 250, 0.5);
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+        code {
+            background: rgba(0,0,0,0.4);
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="card">
+            <div class="badge">Authenticated as {{ aadhaar }}</div>
+            <h1>Cast Your Vote</h1>
+            <div class="subtitle">
+                Your vote will be signed with Dilithium, encrypted with Kyber, shuffled through a mixnet, and anchored on a blockchain.
+            </div>
+
+            {% if error %}
+                <div class="error">{{ error }}</div>
+            {% endif %}
+
+            <form method="POST">
+                <div class="field-group">
+                    <label for="candidate">Choose Candidate</label>
+                    <select id="candidate" name="candidate" required>
+                        <option value="" disabled selected>Select a candidate</option>
+                        {% for c in candidates %}
+                            <option value="{{ c }}">{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field-group">
+                    <label for="private_key">Your Private Key (Dilithium)</label>
+                    <textarea id="private_key" name="private_key" placeholder="Paste the private key you received during registration" required></textarea>
+                </div>
+
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary">Submit Vote Securely</button>
+                    <a href="/" class="btn btn-secondary">Back to Home</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="card info-card">
+            <h2>How your vote is protected</h2>
+            <span class="tag">Post‑Quantum</span>
+            <span class="tag">End‑to‑End Verifiable</span>
+            <span class="tag">Anonymous</span>
+
+            <ul>
+                <li><strong>Dilithium Signature</strong> &mdash; proves the vote came from you without revealing your identity.</li>
+                <li><strong>Kyber Encryption</strong> &mdash; keeps the contents of your vote secret, even against quantum computers.</li>
+                <li><strong>Mixnet Cascade</strong> &mdash; shuffles encrypted votes so no one can link you to a ballot.</li>
+                <li><strong>Blockchain Layer</strong> &mdash; each encrypted vote is anchored on an immutable ledger.</li>
+            </ul>
+
+            <p>
+                After submitting, you will receive a <strong>receipt hash</strong>. Save it carefully:
+            </p>
+            <ul>
+                <li>Use the receipt later to verify that your vote is still present on the blockchain.</li>
+                <li>A mismatch would indicate tampering or deletion.</li>
+            </ul>
+
+            <p>
+                Never share your private key. Only the receipt hash is meant to be public and can be safely stored or shown to auditors.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+

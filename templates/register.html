@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Register - Secure E-Voting</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top, #1a73e8 0, #0b1020 55%, #000 100%);
+            color: #e3f2fd;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.78);
+            border-radius: 18px;
+            padding: 26px 28px 24px;
+            max-width: 980px;
+            width: 92%;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0 0 6px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: #b0bec5;
+            margin-bottom: 18px;
+            line-height: 1.5;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+        .panel {
+            background: rgba(6, 18, 32, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .panel-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: #81d4fa;
+            margin-bottom: 10px;
+        }
+        label {
+            font-size: 13px;
+            display: block;
+            margin-bottom: 6px;
+        }
+        input, select, textarea {
+            width: 100%;
+            border-radius: 10px;
+            padding: 10px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(6, 18, 32, 0.9);
+            color: #e3f2fd;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #42a5f5;
+            box-shadow: 0 0 0 1px rgba(66, 165, 245, 0.4);
+        }
+        textarea { min-height: 76px; resize: vertical; }
+        .field-group { margin-bottom: 12px; }
+        video, canvas {
+            width: 100%;
+            border-radius: 12px;
+            background: #000;
+        }
+        .actions {
+            margin-top: 12px;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn {
+            border-radius: 999px;
+            padding: 9px 20px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary { background: #1a73e8; color: #fff; }
+        .btn-primary:hover { background: #1557b0; }
+        .btn-secondary {
+            background: transparent;
+            color: #e3f2fd;
+            border: 1px solid rgba(227,242,253,0.6);
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.06); }
+        .error {
+            background: rgba(198, 40, 40, 0.12);
+            border-radius: 10px;
+            border: 1px solid rgba(244, 67, 54, 0.65);
+            color: #ffcdd2;
+            padding: 8px 10px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+        .tips {
+            font-size: 12px;
+            color: #b0bec5;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Citizen Registration</h1>
+        <div class="subtitle">
+            Register with Aadhaar details and a face capture. After registration, you will receive a post‑quantum private key for voting.
+        </div>
+
+        {% if error %}
+            <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST">
+            <div class="grid">
+                <div class="panel">
+                    <div class="panel-title">Personal Details</div>
+
+                    <div class="field-group">
+                        <label for="aadhaar">Aadhaar Number</label>
+                        <input id="aadhaar" type="text" name="aadhaar" inputmode="numeric" required>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="name">Full Name</label>
+                        <input id="name" type="text" name="name" required>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="dob">Date of Birth</label>
+                        <input id="dob" type="date" name="dob" required>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="gender">Gender</label>
+                        <select id="gender" name="gender" required>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="mobile">Mobile</label>
+                        <input id="mobile" type="text" name="mobile" inputmode="tel" required>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="email">Email</label>
+                        <input id="email" type="email" name="email" autocomplete="email" required>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="address">Address</label>
+                        <textarea id="address" name="address" required></textarea>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="password">Password</label>
+                        <input id="password" type="password" name="password" autocomplete="new-password" required>
+                    </div>
+
+                    <div class="actions">
+                        <a class="btn btn-secondary" href="/">Back to Home</a>
+                        <button type="submit" class="btn btn-primary">Register</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-title">Face Capture</div>
+                    <video id="video" autoplay playsinline></video>
+                    <div class="actions">
+                        <button type="button" class="btn btn-secondary" onclick="capture()">Capture Face</button>
+                        <span style="font-size:12px;color:#b0bec5;">Capture before registering</span>
+                    </div>
+
+                    <canvas id="canvas" style="display:block; margin-top:12px;"></canvas>
+                    <input type="hidden" name="face_image" id="face_image">
+
+                    <div class="tips">
+                        Tips: Ensure your full face is visible, use good lighting, and keep the camera steady.
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+<script>
+const video = document.getElementById('video');
+
+navigator.mediaDevices.getUserMedia({video:true})
+.then(stream => video.srcObject = stream)
+.catch(err => alert("Camera access denied!"));
+
+function capture(){
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 480;
+    canvas.height = 360;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const data = canvas.toDataURL('image/png');
+    document.getElementById('face_image').value = data;
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Encrypted Votes - Secure E-Voting</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+        background: radial-gradient(
+          circle at top,
+          #1a73e8 0,
+          #0b1020 55%,
+          #000 100%
+        );
+        color: #e3f2fd;
+        min-height: 100vh;
+        box-sizing: border-box;
+      }
+      .card {
+        max-width: 1100px;
+        margin: 0 auto;
+        background: rgba(0, 0, 0, 0.78);
+        border-radius: 18px;
+        padding: 22px;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 24px;
+      }
+      .error {
+        background: rgba(198, 40, 40, 0.12);
+        border: 1px solid rgba(244, 67, 54, 0.65);
+        color: #ffcdd2;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      pre {
+        background: rgba(6, 18, 32, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 10px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+      }
+      a {
+        color: #81d4fa;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Encrypted Votes</h1>
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}
+      <pre>{{ votes }}</pre>
+      <p><a href="/admin/dashboard">Back to Dashboard</a></p>
+    </div>
+  </body>
+</html>

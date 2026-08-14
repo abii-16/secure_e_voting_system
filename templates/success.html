@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authenticated - Secure E-Voting</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top, #0f9d58 0, #021012 60%, #000 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e8f5e9;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 18px;
+            padding: 28px 32px 24px;
+            max-width: 720px;
+            width: 92%;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.7);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(76, 175, 80, 0.16);
+            border: 1px solid rgba(129, 199, 132, 0.8);
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+        .actions {
+            margin-top: 22px;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .btn {
+            border-radius: 999px;
+            padding: 9px 20px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: #1a73e8;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        .btn-secondary {
+            background: transparent;
+            color: #e8f5e9;
+            border: 1px solid rgba(200, 230, 201, 0.5);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        .note {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #b0bec5;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div class="pill"><span>✔</span><span>Authentication complete</span></div>
+        <h1>You are now authenticated</h1>
+        <p>Your identity verification is complete. You can now proceed to the secure voting screen.</p>
+
+        <div class="actions">
+            <a class="btn btn-primary" href="/vote">Continue to Vote</a>
+            <a class="btn btn-secondary" href="/">Back to Home</a>
+        </div>
+
+        <div class="note">
+            Your vote will be protected using post‑quantum cryptography and you will receive a receipt hash for end‑to‑end verification.
+        </div>
+    </div>
+
+</body>
+</html>
