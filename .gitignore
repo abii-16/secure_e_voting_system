@@ -28,6 +28,7 @@ dist/
 # ===========================
 .env
 .env.*
+!.env.example
 
 # ===========================
 # IDE
@@ -88,5 +89,8 @@ PROJECT_REPORT.md
 # Local Test Images
 # ===========================
 aadhar_riya.png
+aadhar_riya2.png
 nani_reddy.png
 sobitha_mam.png
+WhatsApp Image*.jpeg
+WhatsApp Image*.jpg

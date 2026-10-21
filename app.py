@@ -3,51 +3,64 @@ from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import bcrypt
 import os
+import shutil
+import tempfile
 from dotenv import load_dotenv
 
 load_dotenv()
 from datetime import datetime
-try:
-    import face_recognition
-    FACE_RECOGNITION_AVAILABLE = True
-except ImportError:
-    face_recognition = None
-    FACE_RECOGNITION_AVAILABLE = False
 import numpy as np
 import base64
 from PIL import Image
 import io
 import smtplib
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import random
 import requests
 import certifi
 import re
 import secrets
-from pathlib import Path
 from functools import wraps
 from bson import ObjectId
+from scipy.spatial.distance import cosine
 
 try:
     import pytesseract
     from pytesseract import TesseractNotFoundError
-except Exception:  # optional dependency
+except ImportError:
     pytesseract = None
     TesseractNotFoundError = Exception
 
-if pytesseract is not None:
-    tesseract_cmd = os.environ.get("TESSERACT_CMD")
-    if tesseract_cmd and Path(tesseract_cmd).exists():
-        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-    else:
-        for candidate in (
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-            str(Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe"),
-        ):
-            if Path(candidate).exists():
-                pytesseract.pytesseract.tesseract_cmd = candidate
-                break
+
+def _configure_tesseract():
+    """Point pytesseract at tesseract.exe. Windows installers often skip PATH."""
+    if pytesseract is None:
+        return None
+
+    candidates = [
+        os.environ.get("TESSERACT_CMD"),
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+        shutil.which("tesseract"),
+    ]
+    for cmd in candidates:
+        if not cmd:
+            continue
+        cmd = os.path.abspath(cmd)
+        if os.path.isfile(cmd):
+            tess_dir = os.path.dirname(cmd)
+            os.environ["PATH"] = tess_dir + os.pathsep + os.environ.get("PATH", "")
+            pytesseract.pytesseract.tesseract_cmd = cmd
+            tessdata = os.path.join(tess_dir, "tessdata")
+            if os.path.isdir(tessdata):
+                os.environ["TESSDATA_PREFIX"] = tessdata
+            return cmd
+    return None
+
+
+TESSERACT_EXE = _configure_tesseract()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -231,49 +244,78 @@ def is_eligible(dob):
     return age >= 18
 
 def extract_face_encoding(base64_image):
+    """Extract a Facenet embedding with DeepFace (no dlib / face_recognition)."""
     if not base64_image:
         return None
 
     payload = base64_image.strip()
-    # Accept both data URLs (data:image/...;base64,XXXX) and raw base64 payloads.
     if "," in payload:
         payload = payload.split(",", 1)[1]
-
-    # Some clients omit base64 padding; normalize length before decode.
     payload += "=" * (-len(payload) % 4)
 
     try:
         image_data = base64.b64decode(payload)
-        image = Image.open(io.BytesIO(image_data)).convert("RGB")
     except Exception:
         return None
 
-    if not FACE_RECOGNITION_AVAILABLE:
-        # face_recognition not installed - return a dummy encoding so the app still runs
-        return np.zeros(128).tolist()
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp.write(image_data)
+            tmp_path = tmp.name
 
-    image_np = np.array(image)
-    encodings = face_recognition.face_encodings(image_np)
-    if len(encodings) == 0:
+        from deepface import DeepFace
+
+        embedding_objs = DeepFace.represent(
+            img_path=tmp_path,
+            model_name="Facenet",
+            enforce_detection=True,
+            detector_backend="opencv",
+        )
+        if not embedding_objs:
+            return None
+        return embedding_objs[0]["embedding"]
+    except Exception:
         return None
-    return encodings[0]
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 def compare_faces(stored, captured):
-    stored = np.array(stored)
-    distance = np.linalg.norm(stored - captured)
-    return distance < 0.6
+    """Compare Facenet embeddings with cosine distance."""
+    stored = np.array(stored, dtype=float)
+    captured = np.array(captured, dtype=float)
+    if stored.size == 0 or captured.size == 0 or stored.shape != captured.shape:
+        return False
+    return cosine(stored, captured) < 0.5
 
 def send_otp_email(receiver_email, otp):
-    msg = MIMEText(f"Your OTP for EVoting login is: {otp}")
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        raise RuntimeError("SENDER_EMAIL and SENDER_PASSWORD must be set in the .env file.")
+
+    msg = MIMEMultipart()
     msg["Subject"] = "EVoting Login OTP"
     msg["From"] = SENDER_EMAIL
     msg["To"] = receiver_email
+    msg.attach(MIMEText(f"Your OTP for EVoting login is: {otp}\n\nThis OTP is valid for 10 minutes.", "plain"))
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(SENDER_EMAIL, SENDER_PASSWORD)
-    server.send_message(msg)
-    server.quit()
+    server = smtplib.SMTP("smtp.gmail.com", 587, timeout=10)
+    try:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.send_message(msg)
+    except smtplib.SMTPAuthenticationError as e:
+        raise RuntimeError("Email authentication failed. Check SENDER_EMAIL and the Gmail app password.") from e
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
 
 
 def _allowed_aadhaar_upload(filename: str) -> bool:
@@ -310,7 +352,14 @@ def extract_aadhaar_details_from_image(file_storage):
     - Tesseract OCR installed on the machine
     """
     if pytesseract is None:
-        raise RuntimeError("OCR not available. Install pytesseract and Tesseract OCR.")
+        raise RuntimeError("OCR not available. Install pytesseract in the same Python environment.")
+
+    exe = TESSERACT_EXE or _configure_tesseract()
+    if not exe:
+        raise RuntimeError(
+            "Tesseract OCR is installed but Python cannot find tesseract.exe. "
+            "Restart the Flask app after installing, or set TESSERACT_CMD to the full path."
+        )
 
     raw = file_storage.read()
     if not raw:
@@ -323,7 +372,9 @@ def extract_aadhaar_details_from_image(file_storage):
     try:
         text = pytesseract.image_to_string(img)
     except TesseractNotFoundError as e:
-        raise RuntimeError("Tesseract OCR not installed or not found in PATH.") from e
+        raise RuntimeError(
+            f"Tesseract OCR not found. Expected at: {pytesseract.pytesseract.tesseract_cmd}"
+        ) from e
 
     # Aadhaar number patterns: "1234 5678 9012" or "123456789012"
     aadhaar_match = re.search(r"\b(\d{4}\s\d{4}\s\d{4})\b", text)
@@ -484,10 +535,7 @@ def login():
         try:
             ocr = extract_aadhaar_details_from_image(aadhaar_card)
         except Exception as e:
-            if "Tesseract" in str(e) or "OCR not available" in str(e):
-                ocr = {"aadhaar": aadhaar, "dob": entered_dob} # Bypass if OCR is not available
-            else:
-                return render_template("login.html", error=f"Aadhaar OCR failed: {str(e)}")
+            return render_template("login.html", error=f"Aadhaar OCR failed: {str(e)}")
 
         if not ocr.get("aadhaar"):
             return render_template("login.html", error="Could not read Aadhaar number from the uploaded card. Please upload a clearer image.")
@@ -496,13 +544,16 @@ def login():
             return render_template("login.html", error="Aadhaar number does not match the uploaded Aadhaar card.")
 
         if ocr.get("dob"):
-            if ocr["dob"] != entered_dob:
-                return render_template("login.html", error="DOB does not match the uploaded Aadhaar card.")
+            ocr_dob = (ocr["dob"] or "").strip()
+            if ocr_dob and ocr_dob != entered_dob:
+                return render_template(
+                    "login.html",
+                    error=f"DOB does not match the uploaded Aadhaar card. (Card: {ocr_dob}, Entered: {entered_dob})",
+                )
         elif ocr.get("yob"):
             if entered_dob[:4] != ocr["yob"]:
                 return render_template("login.html", error="Year of birth does not match the uploaded Aadhaar card.")
-        else:
-            return render_template("login.html", error="Could not read DOB/Year of Birth from the uploaded card. Please upload a clearer image.")
+        # If OCR could not extract DOB, rely on the stored registration DOB check above.
 
         # Remember which user is in the MFA flow
         session["aadhaar"] = aadhaar
@@ -546,7 +597,15 @@ def verify_face_login():
     otp = str(random.randint(100000, 999999))
     voter_users.update_one({"aadhaar": aadhaar}, {"$set": {"otp": otp}})
     users.update_one({"aadhaar": aadhaar}, {"$set": {"otp": otp}})
-    send_otp_email(user["email"], otp)
+    try:
+        send_otp_email(user["email"], otp)
+    except Exception as e:
+        return render_template(
+            "face_verify.html",
+            aadhaar=aadhaar,
+            error=f"Failed to send OTP email: {str(e)}",
+            action_url="/verify_face_login",
+        )
 
     session["aadhaar"] = aadhaar
     session["face_verified"] = True
@@ -1381,4 +1440,5 @@ def official_approve_decryption():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port = 8000)
+    print(f"Tesseract executable: {TESSERACT_EXE or 'NOT FOUND'}")
+    app.run(debug=True, port=8000, use_reloader=False)

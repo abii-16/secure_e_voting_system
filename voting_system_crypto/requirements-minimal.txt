@@ -1,0 +1,19 @@
+# Minimal requirements (works on all platforms)
+# Uses simulated post-quantum crypto for demo purposes
+
+# Standard Cryptography
+cryptography>=41.0.0
+bcrypt>=4.0.1
+pycryptodome>=3.19.0
+
+# Homomorphic Encryption
+phe>=1.5.0
+
+# Web Framework
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyotp>=2.9.0
+requests>=2.31.0

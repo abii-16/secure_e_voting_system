@@ -1,0 +1,23 @@
+# Flask UI (app.py)
+flask>=3.0.0
+flask-cors>=4.0.0
+pymongo>=4.6.0
+bcrypt>=4.0.1
+python-dotenv>=1.0.0
+certifi
+numpy
+Pillow
+scipy
+requests>=2.31.0
+pytesseract
+
+# Face verification (used by app.py)
+deepface>=0.0.90
+opencv-python>=4.8.0
+tf-keras
+
+# Crypto backend (also listed under voting_system_crypto/)
+cryptography>=41.0.0
+pycryptodome>=3.19.0
+phe>=1.5.0
+pyotp>=2.9.0

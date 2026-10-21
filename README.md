@@ -143,8 +143,8 @@ Both layers connect to a shared MongoDB Atlas database.
 | Post-Quantum Cryptography | Dilithium, Kyber (simulation) |
 | Homomorphic Encryption    | Paillier                      |
 | Authentication            | bcrypt, pyotp                 |
-| Biometrics                | face_recognition              |
-| OCR                       | pytesseract                   |
+| Biometrics                | DeepFace (Facenet)            |
+| OCR                       | pytesseract + Tesseract OCR   |
 | Cryptography              | PyCryptodome, cryptography    |
 | Email Services            | SMTP                          |
 | CORS                      | flask-cors                    |
@@ -159,17 +159,27 @@ cd secure_e_voting_system
 pip install -r requirements.txt
 ```
 
+Copy `.env.example` to `.env` and set `FLASK_SECRET_KEY`, `MONGO_URI`, `SENDER_EMAIL`, and `SENDER_PASSWORD`. Do not commit `.env`. Tesseract OCR must be installed on the machine for Aadhaar card login.
+
+Optional crypto-only install:
+
+```bash
+pip install -r voting_system_crypto/requirements-minimal.txt
+```
+
 ---
 
 ## ▶️ Running the Application
 
-### Start the Cryptographic Backend
+Create a `.env` file first. Both processes share `MONGO_URI`.
+
+### Start the Cryptographic Backend (port 5000)
 
 ```bash
 python voting_system_crypto/backend/server.py
 ```
 
-### Start the Frontend Application
+### Start the Frontend Application (port 8000)
 
 ```bash
 python app.py
@@ -205,7 +215,7 @@ python app.py
 * Dilithium and Kyber are simulated and can be replaced with real NIST-standard PQC implementations such as `liboqs-python`.
 * Threshold sharing currently uses XOR-based splitting instead of Shamir's Secret Sharing.
 * Mixnet and Zero-Knowledge Proof implementations are simplified for demonstration purposes.
-* Sensitive credentials should be moved to environment variables before deployment.
+* Store secrets only in `.env`. Never commit MongoDB URIs, Gmail app passwords, or Aadhaar images.
 
 ---
 
