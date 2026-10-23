@@ -180,6 +180,32 @@
         padding: 14px;
         margin-top: 10px;
       }
+      .live-dot {
+        display: inline-block;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #4caf50;
+        margin-right: 6px;
+        animation: pulse 1.4s infinite;
+      }
+      @keyframes pulse {
+        0%,100% { opacity: 1; }
+        50%      { opacity: 0.3; }
+      }
+      .live-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .live-item {
+        background: rgba(6,18,32,0.92);
+        border: 1px solid rgba(76,175,80,0.4);
+        border-radius: 10px;
+        padding: 10px 14px;
+      }
+      .live-item .lname { font-size: 12px; color: #b0bec5; }
+      .live-item .lcount { font-size: 28px; font-weight: 700; color: #a5d6a7; }
       .reset-section h4 {
         color: #ffcdd2;
         margin: 0 0 10px;
@@ -297,6 +323,16 @@
             class="action-btn action-btn-secondary"
             >View Encrypted Votes</a
           >
+          <a
+            href="/admin/audit-logs-ui"
+            class="action-btn action-btn-secondary"
+            >Audit Logs</a
+          >
+          <a
+            href="/admin/gridfs-images"
+            class="action-btn action-btn-secondary"
+            >GridFS Images</a
+          >
         </div>
 
         <div class="reset-section">
@@ -342,6 +378,65 @@
           </form>
         </div>
       </div>
-    </div>
+
+      <!-- Task 6: Live vote counts via Change Stream SSE -->
+      <div class="card">
+        <h3><span class="live-dot"></span>Live Vote Counts</h3>
+        <div class="subtitle">Updates in real time via MongoDB Change Stream.</div>
+        <div class="live-grid" id="liveGrid">
+          <div class="live-item"><div class="lname">Waiting…</div><div class="lcount">—</div></div>
+        </div>
+        <div style="font-size:11px;color:#546e7a;margin-top:8px;" id="liveStatus">Connecting…</div>
+      </div>
+
+    </div><!-- /.container -->
+
+  <script>
+    // Task 6: SSE consumer — connects to backend /admin/stream
+    (function () {
+      const BACKEND = "http://localhost:5000";
+      const grid    = document.getElementById("liveGrid");
+      const status  = document.getElementById("liveStatus");
+
+      function renderCounts(counts) {
+        if (!counts || !Object.keys(counts).length) return;
+        grid.innerHTML = "";
+        Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([cand, n]) => {
+            const div = document.createElement("div");
+            div.className = "live-item";
+            div.innerHTML = `<div class="lname">${cand}</div><div class="lcount">${n}</div>`;
+            grid.appendChild(div);
+          });
+      }
+
+      function connect() {
+        const src = new EventSource(`${BACKEND}/admin/stream`);
+
+        src.onopen = () => {
+          status.textContent = "● Connected — receiving live updates";
+          status.style.color = "#4caf50";
+        };
+
+        src.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            renderCounts(data.counts);
+            status.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+          } catch (_) {}
+        };
+
+        src.onerror = () => {
+          status.textContent = "Connection lost — retrying…";
+          status.style.color = "#ef9a9a";
+          src.close();
+          setTimeout(connect, 5000);
+        };
+      }
+
+      connect();
+    })();
+  </script>
   </body>
 </html>

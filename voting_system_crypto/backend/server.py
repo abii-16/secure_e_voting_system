@@ -21,12 +21,12 @@ from collections import Counter
 
 import certifi
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
-from pymongo import MongoClient
+from pymongo import MongoClient, DESCENDING
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 load_dotenv()
-from pymongo.errors import PyMongoError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -39,9 +39,32 @@ from blockchain.chain import VotingBlockchain
 from counting.homomorphic import HomomorphicCounter
 from counting.threshold import ElectionAuthorities
 from crypto.pq_crypto import generate_election_keypair, DilithiumKeyPair
+from mongo_features import (
+    bootstrap_mongo_features,
+    is_duplicate_vote_error,
+    agg_votes_per_candidate,
+    agg_turnout_per_hour,
+    agg_dashboard_facet,
+    agg_merge_results,
+    agg_failed_logins_per_hour,
+    transactional_store_vote,
+    transactional_approve_official,
+    store_otp_session,
+    verify_otp_session,
+    record_login_attempt,
+    is_account_locked,
+    audit,
+    start_vote_change_stream,
+    register_stream_callback,
+    store_file_gridfs,
+    log_explain_stats,
+    migrate_legacy_users,
+    cleanup_officials_key_shares,
+)
 
 app = Flask(__name__)
 CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB — face images are large base64 payloads
 
 MONGO_URI = os.environ.get("MONGO_URI")
 if not MONGO_URI:
@@ -120,7 +143,7 @@ def _now_iso() -> str:
 
 
 def _json_body() -> dict:
-    return request.get_json(silent=True) or {}
+    return request.get_json(silent=True, force=True) or {}
 
 
 def _ensure_mongo_ready() -> tuple[bool, str | None]:
@@ -185,22 +208,48 @@ def _persist_latest_block(election_id: str):
 
 
 def _store_vote(vote_result: dict, vote_record: dict, election_id: str):
-    votes_collection.update_one(
-        {"vote_id": vote_result["vote_id"]},
-        {
-            "$set": {
-                "vote_id": vote_result["vote_id"],
-                "election_id": election_id,
-                "encrypted_vote": vote_record.get("encrypted_vote", ""),
-                "signature": vote_record.get("signature", ""),
-                "timestamp": vote_record.get("timestamp", _now_iso()),
-                "receipt_hash": vote_result["receipt_hash"],
-                "candidate_id": vote_record.get("candidate_id"),
-                "voter_id_hash": hashlib.sha3_256(vote_record.get("voter_id", "").encode()).hexdigest(),
-            }
-        },
-        upsert=True,
-    )
+    """
+    Task 3: Atomically insert vote + blockchain block in one ACID transaction.
+    Task 1: DuplicateKeyError on voter_id_hash+election_id prevents double voting.
+    Timestamp stored as real datetime object (Task 2 requirement).
+    """
+    voter_id_hash = hashlib.sha3_256(vote_record.get("voter_id", "").encode()).hexdigest()
+
+    # Parse timestamp to real datetime for $dateTrunc aggregations (Task 2)
+    raw_ts = vote_record.get("timestamp", "")
+    try:
+        ts_dt = datetime.fromisoformat(raw_ts)
+    except (ValueError, TypeError):
+        ts_dt = datetime.utcnow()
+
+    vote_doc = {
+        "vote_id":       vote_result["vote_id"],
+        "election_id":   election_id,
+        "encrypted_vote": vote_record.get("encrypted_vote", ""),
+        "signature":     vote_record.get("signature", ""),
+        "timestamp":     ts_dt,                          # real datetime
+        "receipt_hash":  vote_result["receipt_hash"],
+        "candidate_id":  vote_record.get("candidate_id"),
+        "voter_id_hash": voter_id_hash,
+    }
+
+    latest = blockchain.get_latest_block()
+    block_id = f"{election_id}_B{latest.index}"
+    vote_hash_concat = "|".join(v.get("vote_hash", "") for v in latest.votes)
+    block_update = {
+        "block_id":    block_id,
+        "block_index": latest.index,
+        "election_id": election_id,
+        "previous_hash": latest.previous_hash,
+        "vote_hash":   hashlib.sha3_256(vote_hash_concat.encode()).hexdigest(),
+        "nonce":       latest.nonce,
+        "timestamp":   latest.timestamp,
+        "hash":        latest.hash,
+        "votes":       latest.votes,
+    }
+
+    # Task 3: single ACID transaction — vote + blockchain block
+    transactional_store_vote(mongo_client, db, vote_doc, block_id, block_update)
 
 
 def _compute_homomorphic_tallies(vote_docs: list[dict], candidate_names: list[str], include_plaintext: bool = False):
@@ -253,22 +302,50 @@ def _finalize_results_if_threshold_met(
     selected_ids = [d["official_id"] for d in selected]
     selected_shares = sorted(d["key_share"] for d in selected)
 
-    # Simulated threshold reconstruction using approved key shares from DB.
     reconstructed_key = hashlib.sha3_256("|".join(selected_shares).encode()).hexdigest()
 
     plaintext_results = precomputed_results if precomputed_results is not None else _compute_plaintext_tally(vote_docs, candidate_names)
 
     winner = max(plaintext_results, key=plaintext_results.get) if plaintext_results else None
+    total_votes = sum(plaintext_results.values())
+
+    # Build per-candidate breakdown with names from DB
+    candidate_docs = list(candidates_collection.find(
+        {"election_id": election_id}, {"candidate_id": 1, "name": 1, "party": 1, "_id": 0}
+    ))
+    name_map = {d["candidate_id"]: d for d in candidate_docs}
+
+    per_candidate = []
+    for cid, count in sorted(plaintext_results.items(), key=lambda x: -x[1]):
+        meta = name_map.get(cid, {})
+        per_candidate.append({
+            "candidate_id": cid,
+            "name": meta.get("name", cid),
+            "party": meta.get("party", "Independent"),
+            "votes": count,
+            "percentage": round((count / total_votes * 100), 2) if total_votes > 0 else 0,
+        })
+
+    # Turnout per hour — convert datetime to ISO string
+    raw_turnout = agg_turnout_per_hour(db, election_id)
+    turnout = [
+        {"hour": t["hour"].isoformat() if hasattr(t["hour"], "isoformat") else str(t["hour"]),
+         "votes": t["votes"]}
+        for t in raw_turnout
+    ]
 
     results_collection.update_one(
         {"election_id": election_id},
         {
             "$set": {
-                "election_id": election_id,
-                "results": plaintext_results,
-                "winner": winner,
-                "decrypted_at": _now_iso(),
-                "officials_used": selected_ids,
+                "election_id":              election_id,
+                "results":                  plaintext_results,       # {candidate_id: count}
+                "per_candidate":            per_candidate,           # full breakdown with names
+                "winner":                   winner,
+                "total_votes":              total_votes,
+                "turnout_per_hour":         turnout,
+                "decrypted_at":             _now_iso(),
+                "officials_used":           selected_ids,
                 "threshold_key_reconstruction": reconstructed_key,
             }
         },
@@ -280,15 +357,18 @@ def _finalize_results_if_threshold_met(
         {
             "$set": {
                 "final_result_ready": True,
-                "winner": winner,
-                "updated_at": _now_iso(),
+                "winner":             winner,
+                "total_votes":        total_votes,
+                "updated_at":         _now_iso(),
             }
         },
     )
 
     return {
-        "results": plaintext_results,
-        "winner": winner,
+        "results":       plaintext_results,
+        "winner":        winner,
+        "total_votes":   total_votes,
+        "per_candidate": per_candidate,
         "officials_used": selected_ids,
     }
 
@@ -299,11 +379,14 @@ def _bootstrap_persistent_state():
         print(f"[WARN] MongoDB not available for persistence: {err}")
         return
 
-    votes_collection.create_index("vote_id", unique=True)
-    blockchain_collection.create_index("block_id", unique=True)
-    candidates_collection.create_index([("candidate_id", 1), ("election_id", 1)], unique=True)
-    elections_collection.create_index("election_id", unique=True)
-    officials_collection.create_index([("official_id", 1), ("election_id", 1)], unique=True)
+    # Task 1-11: all MongoDB features bootstrapped here
+    bootstrap_mongo_features(db, mongo_client)
+
+    # Task 10: performance story — log explain before/after index (runs once at startup)
+    log_explain_stats(db, "votes",       {"election_id": DEFAULT_ELECTION_ID},          "votes by election_id")
+    log_explain_stats(db, "voter_users", {"aadhaar": "000000000000"},                   "voter_users by aadhaar")
+    log_explain_stats(db, "officials",   {"election_id": DEFAULT_ELECTION_ID,
+                                          "has_approved": True},                          "officials approved partial")
 
     election = _get_active_election()
     if not election:
@@ -317,8 +400,8 @@ def _bootstrap_persistent_state():
                     "candidates": [c["candidate_id"] for c in DEFAULT_CANDIDATES],
                     "aggregated_encrypted_result": None,
                     "final_result_ready": False,
-                    "created_at": _now_iso(),
-                    "updated_at": _now_iso(),
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
                 }
             },
             upsert=True,
@@ -343,10 +426,28 @@ def _bootstrap_persistent_state():
 
     elections_collection.update_one(
         {"election_id": election_id},
-        {"$set": {"candidates": [c["candidate_id"] for c in DEFAULT_CANDIDATES]}},
+        {"$addToSet": {"candidates": {"$each": [c["candidate_id"] for c in DEFAULT_CANDIDATES]}}},
     )
 
-    # Authorities are now created dynamically when admin approves official registrations.
+    # Task 11: migrate any legacy voter documents
+    migrate_legacy_users(db)
+
+    # Task 9: security cleanup — remove redundant key fields
+    cleanup_officials_key_shares(db)
+
+    # Task 6: start change stream for live dashboard
+    live_vote_counts = {}
+
+    def _on_new_vote(doc):
+        eid  = doc.get("election_id", "")
+        cand = doc.get("candidate_id", "")
+        if eid not in live_vote_counts:
+            live_vote_counts[eid] = {}
+        live_vote_counts[eid][cand] = live_vote_counts[eid].get(cand, 0) + 1
+
+    register_stream_callback(_on_new_vote)
+    start_vote_change_stream(db)
+    app.config["LIVE_VOTE_COUNTS"] = live_vote_counts
 
 
 _bootstrap_persistent_state()
@@ -497,10 +598,9 @@ def submit_vote():
         # Reconstruct voter keypair
         keypair = DilithiumKeyPair()
         keypair.private_key = bytes.fromhex(data["private_key"])
-        # Keep keypair consistent with its private key (simulated Dilithium)
         keypair.public_key = hashlib.sha3_256(keypair.private_key).digest()
 
-        # PHASE 3: Submit vote (includes signing, encryption, receipt)
+        # PHASE 3: Submit vote (signing, encryption, receipt)
         result = vote_handler.submit_vote(
             voter_id=data["voter_id"],
             candidate_id=data["candidate_id"],
@@ -509,34 +609,45 @@ def submit_vote():
 
         vote_record = vote_handler.submitted_votes[-1]
 
-        # PHASE 5: Add to blockchain and mine immediately for persistence
-        blockchain.add_vote(
-            {
-                "voter_id": data["voter_id"],
-                "receipt_hash": result["receipt_hash"],
-                "timestamp": vote_record["timestamp"],
-            }
-        )
-        before_blocks = len(blockchain.chain)
+        # PHASE 5: Mine into blockchain
+        blockchain.add_vote({
+            "voter_id":     data["voter_id"],
+            "receipt_hash": result["receipt_hash"],
+            "timestamp":    vote_record["timestamp"],
+        })
         blockchain.mine_pending_votes()
-        if len(blockchain.chain) > before_blocks:
-            _persist_latest_block(election_id)
 
-        # Persist encrypted vote
+        # Task 3: atomic transaction — vote + blockchain block (Task 1: DuplicateKeyError guard inside)
         _store_vote(result, vote_record, election_id)
 
-        # OPTIONAL: Generate Zero Knowledge Proof
-        vote_data = {
+        # Task 7: audit log
+        audit(db, "vote_submitted", aadhaar=data.get("voter_id", ""),
+              success=True, details={"election_id": election_id,
+                                     "vote_id": result["vote_id"]})
+
+        # ZKP — refresh valid candidates from DB so newly added candidates are accepted
+        current_candidates = _candidate_names_for_election(election_id)
+        zkp_system.valid_candidates = current_candidates
+        zkp_system.candidate_commitments = zkp_system._generate_commitments()
+        zkp = zkp_system.generate_proof(data["candidate_id"], {
             "vote_id": result["vote_id"],
             "timestamp": vote_record["timestamp"],
-        }
-        zkp = zkp_system.generate_proof(data["candidate_id"], vote_data)
+        })
         result["zkp"] = zkp
         result["election_id"] = election_id
 
         return jsonify(result), 200
 
+    except DuplicateKeyError as e:
+        # Task 1: DB-level double-vote rejection
+        if is_duplicate_vote_error(e):
+            audit(db, "double_vote_attempt", aadhaar=data.get("voter_id", ""),
+                  success=False, details={"election_id": election_id})
+            return jsonify({"error": "You have already voted in this election."}), 409
+        return jsonify({"error": "Duplicate record error."}), 409
     except Exception as e:
+        audit(db, "vote_error", aadhaar=data.get("voter_id", ""),
+              success=False, details={"error": str(e)})
         return jsonify({"error": str(e)}), 400
 
 
@@ -568,120 +679,132 @@ def verify_receipt():
 
 @app.route("/count-votes", methods=["POST"])
 def count_votes():
-    """PHASES 4-9 flow with encrypted aggregate first, threshold-gated result reveal."""
+    """PHASES 4-9: Aggregation-pipeline counting + threshold-gated result reveal."""
     data = _json_body()
     if (data.get("triggered_by") or "").lower() != "admin":
         return jsonify({"error": "Vote counting can only be triggered from admin profile."}), 403
 
     election_id = data.get("election_id")
-
     active = _get_active_election()
     if not election_id:
         election_id = active["election_id"] if active else DEFAULT_ELECTION_ID
 
-    # PHASE 5: Mine pending votes into blockchain if any
-    before_blocks = len(blockchain.chain)
+    # PHASE 5: mine any pending votes
     blockchain.mine_pending_votes()
-    if len(blockchain.chain) > before_blocks:
-        _persist_latest_block(election_id)
 
-    # Verify blockchain integrity
     if not blockchain.verify_chain():
         return jsonify({"error": "Blockchain integrity compromised"}), 500
 
-    vote_docs = list(votes_collection.find({"election_id": election_id}, {"_id": 0}))
-
-    # Backward-compatible fallback for legacy in-memory mode
-    if not vote_docs:
-        vote_docs = []
-        for v in vote_handler.submitted_votes:
-            copy_v = dict(v)
-            copy_v["election_id"] = election_id
-            vote_docs.append(copy_v)
-
-    if not vote_docs:
-        return jsonify({"error": "No votes to count"}), 400
-
     approved_count = len(_approved_official_ids(election_id))
     if approved_count < 3:
-        return jsonify(
-            {
-                "error": "At least 3 official approvals are required before counting.",
-                "approved_officials": approved_count,
-                "required_officials": 3,
-            }
-        ), 400
+        return jsonify({
+            "error": "At least 3 official approvals are required before counting.",
+            "approved_officials": approved_count,
+            "required_officials": 3,
+        }), 400
 
-    candidate_names = _candidate_names_for_election(election_id)
-    plaintext_tally = _compute_plaintext_tally(vote_docs, candidate_names)
-    run_crypto_pipeline = bool(data.get("run_crypto_pipeline"))
+    try:
+        candidate_names = _candidate_names_for_election(election_id)
 
-    encrypted_tally = None
-    phases_completed = [
-        "PHASE_5_BLOCKCHAIN_MINED",
-        "FAST_TALLY_COMPLETE",
-    ]
+        # Task 2: aggregation pipeline replaces Python Counter loop
+        agg_results = agg_votes_per_candidate(db, election_id)
+        plaintext_tally = {r["candidate_id"]: r["count"] for r in agg_results}
+        # Fill zero for candidates with no votes
+        for name in candidate_names:
+            plaintext_tally.setdefault(name, 0)
 
-    if run_crypto_pipeline:
-        # Optional heavy crypto pipeline for deeper audit scenarios.
-        encrypted_votes = [v.get("encrypted_vote") for v in vote_docs if v.get("encrypted_vote")]
-        if encrypted_votes:
-            mixed_votes = mixnet.process_votes(encrypted_votes)
-            if not mixnet.verify_count(len(encrypted_votes), len(mixed_votes)):
-                return jsonify({"error": "Vote count mismatch in mixnet"}), 500
+        # Task 2: $merge pipeline writes results into agg_results collection
+        agg_merge_results(db, election_id, candidate_names)
 
-        encrypted_tally, _ = _compute_homomorphic_tallies(vote_docs, candidate_names, include_plaintext=False)
-        phases_completed.insert(0, "PHASE_4_MIXNET_COMPLETE")
-        phases_completed.append("PHASE_7_HOMOMORPHIC_ENCRYPTED_COUNT")
+        # Task 2: $facet for dashboard stats
+        facet_stats = agg_dashboard_facet(db, election_id)
 
-    elections_collection.update_one(
-        {"election_id": election_id},
-        {
-            "$set": {
+        # Task 2: turnout timeline — convert datetime keys to strings for JSON
+        raw_turnout = agg_turnout_per_hour(db, election_id)
+        turnout = [
+            {"hour": t["hour"].isoformat() if hasattr(t["hour"], "isoformat") else str(t["hour"]),
+             "votes": t["votes"]}
+            for t in raw_turnout
+        ]
+
+        run_crypto_pipeline = bool(data.get("run_crypto_pipeline"))
+        encrypted_tally = None
+        phases_completed = ["PHASE_5_BLOCKCHAIN_VERIFIED", "PHASE_2_AGG_PIPELINE_COUNTING"]
+
+        if run_crypto_pipeline:
+            vote_docs = list(votes_collection.find({"election_id": election_id}, {"_id": 0}))
+            encrypted_votes = [v.get("encrypted_vote") for v in vote_docs if v.get("encrypted_vote")]
+            if encrypted_votes:
+                mixed_votes = mixnet.process_votes(encrypted_votes)
+                if not mixnet.verify_count(len(encrypted_votes), len(mixed_votes)):
+                    return jsonify({"error": "Vote count mismatch in mixnet"}), 500
+            encrypted_tally, _ = _compute_homomorphic_tallies(
+                list(votes_collection.find({"election_id": election_id}, {"_id": 0})),
+                candidate_names, include_plaintext=False
+            )
+            phases_completed.insert(0, "PHASE_4_MIXNET_COMPLETE")
+            phases_completed.append("PHASE_7_HOMOMORPHIC_ENCRYPTED_COUNT")
+
+        elections_collection.update_one(
+            {"election_id": election_id},
+            {"$set": {
                 "aggregated_encrypted_result": encrypted_tally,
                 "counted_at": _now_iso(),
                 "updated_at": _now_iso(),
-            }
-        },
-        upsert=True,
-    )
+            }},
+            upsert=True,
+        )
 
-    # PHASE 8/9: decrypt only when threshold approvals are present
-    final = _finalize_results_if_threshold_met(
-        election_id,
-        candidate_names,
-        vote_docs,
-        precomputed_results=plaintext_tally,
-    )
+        vote_docs_for_threshold = list(votes_collection.find({"election_id": election_id}, {"_id": 0}))
+        final = _finalize_results_if_threshold_met(
+            election_id, candidate_names, vote_docs_for_threshold,
+            precomputed_results=plaintext_tally,
+        )
 
-    response = {
-        "success": True,
-        "election_id": election_id,
-        "encrypted_result": encrypted_tally,
-        "results": plaintext_tally,
-        "winner": max(plaintext_tally, key=plaintext_tally.get) if plaintext_tally else None,
-        "total_votes": len(vote_docs),
-        "phases_completed": phases_completed,
-        "blockchain_valid": blockchain.verify_chain(),
-        "mixnet_anonymity": "GUARANTEED",
-        "vote_privacy": "PRESERVED",
-        "threshold_approved_count": approved_count,
-        "result_ready": bool(final),
-        "blockchain_summary": blockchain.get_chain_summary(),
-    }
+        # Task 7: audit
+        audit(db, "counting_triggered", success=True,
+              details={"election_id": election_id, "total": facet_stats["total"]})
 
-    # Backward compatibility: allow legacy clients to request immediate plaintext results.
-    if data.get("legacy_mode"):
-        _, plaintext = _compute_homomorphic_tallies(vote_docs, candidate_names, include_plaintext=True)
-        response["results"] = plaintext or {}
+        # blockchain_summary may contain non-serializable types — convert safely
+        try:
+            chain_summary = blockchain.get_chain_summary()
+            chain_summary = {k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                             for k, v in chain_summary.items()}
+        except Exception:
+            chain_summary = {}
 
-    if final:
-        response["results"] = final["results"]
-        response["winner"] = final["winner"]
-        response["threshold_authorities_used"] = final["officials_used"]
-        response["phases_completed"].extend(["PHASE_8_THRESHOLD_DECRYPT", "PHASE_9_AIR_GAPPED_TALLY"])
+        response = {
+            "success": True,
+            "election_id": election_id,
+            "encrypted_result": encrypted_tally,
+            "results": plaintext_tally,
+            "winner": max(plaintext_tally, key=plaintext_tally.get) if plaintext_tally else None,
+            "total_votes": facet_stats["total"],
+            "facet_stats": facet_stats,
+            "turnout_per_hour": turnout,
+            "phases_completed": phases_completed,
+            "blockchain_valid": blockchain.verify_chain(),
+            "mixnet_anonymity": "GUARANTEED",
+            "vote_privacy": "PRESERVED",
+            "threshold_approved_count": approved_count,
+            "result_ready": bool(final),
+            "blockchain_summary": chain_summary,
+        }
 
-    return jsonify(response), 200
+        if final:
+            response["results"] = final["results"]
+            response["winner"] = final["winner"]
+            response["total_votes"] = final["total_votes"]
+            response["per_candidate"] = final["per_candidate"]
+            response["threshold_authorities_used"] = final["officials_used"]
+            response["phases_completed"].extend(["PHASE_8_THRESHOLD_DECRYPT", "PHASE_9_AIR_GAPPED_TALLY"])
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Counting failed: {str(e)}"}), 500
 
 
 @app.route("/admin/add-candidate", methods=["POST"])
@@ -790,30 +913,41 @@ def admin_end_election():
 @app.route("/admin/view-blockchain", methods=["GET"])
 def admin_view_blockchain():
     election_id = request.args.get("election_id")
-    query = {"election_id": election_id} if election_id else {}
-    docs = list(blockchain_collection.find(query, {"_id": 0}).sort("block_index", 1))
-    return jsonify({"success": True, "blocks": docs, "count": len(docs)}), 200
+    page     = max(1, int(request.args.get("page", 1)))
+    per_page = max(1, int(request.args.get("per_page", 10)))
+    skip     = (page - 1) * per_page
+    query    = {"election_id": election_id} if election_id else {}
+    total    = blockchain_collection.count_documents(query)
+    docs     = list(blockchain_collection.find(query, {"_id": 0})
+                    .sort("block_index", DESCENDING)
+                    .skip(skip).limit(per_page))
+    return jsonify({"success": True, "blocks": docs, "count": total,
+                    "page": page, "per_page": per_page,
+                    "total_pages": max(1, (total + per_page - 1) // per_page)}), 200
 
 
 @app.route("/admin/view-encrypted-votes", methods=["GET"])
 def admin_view_encrypted_votes():
     election_id = request.args.get("election_id")
-    query = {"election_id": election_id} if election_id else {}
-    docs = list(
+    page     = max(1, int(request.args.get("page", 1)))
+    per_page = max(1, int(request.args.get("per_page", 20)))
+    skip     = (page - 1) * per_page
+    query    = {"election_id": election_id} if election_id else {}
+    total    = votes_collection.count_documents(query)
+    docs     = list(
         votes_collection.find(
             query,
-            {
-                "_id": 0,
-                "vote_id": 1,
-                "election_id": 1,
-                "encrypted_vote": 1,
-                "signature": 1,
-                "timestamp": 1,
-                "receipt_hash": 1,
-            },
-        ).sort("timestamp", 1)
+            {"_id": 0, "vote_id": 1, "election_id": 1, "encrypted_vote": 1,
+             "signature": 1, "timestamp": 1, "receipt_hash": 1},
+        ).sort("timestamp", DESCENDING).skip(skip).limit(per_page)
     )
-    return jsonify({"success": True, "votes": docs, "count": len(docs)}), 200
+    # convert datetime → string for JSON
+    for d in docs:
+        if hasattr(d.get("timestamp"), "isoformat"):
+            d["timestamp"] = d["timestamp"].isoformat()
+    return jsonify({"success": True, "votes": docs, "count": total,
+                    "page": page, "per_page": per_page,
+                    "total_pages": max(1, (total + per_page - 1) // per_page)}), 200
 
 
 @app.route("/admin/dashboard-data", methods=["GET"])
@@ -884,23 +1018,85 @@ def official_approve_decryption():
         {"$set": {"has_approved": True, "approved_at": _now_iso()}},
     )
 
-    approved_ids = _approved_official_ids(election_id)
+    # Task 7: audit
+    audit(db, "official_approved_decryption", success=True,
+          details={"official_id": official_id, "election_id": election_id})
 
+    approved_ids = _approved_official_ids(election_id)
     vote_docs = list(votes_collection.find({"election_id": election_id}, {"_id": 0}))
     candidate_names = _candidate_names_for_election(election_id)
     final = _finalize_results_if_threshold_met(election_id, candidate_names, vote_docs)
 
-    return jsonify(
-        {
-            "success": True,
-            "official_id": official_id,
-            "election_id": election_id,
-            "approved_count": len(approved_ids),
-            "threshold_reached": len(approved_ids) >= 3,
-            "result_ready": bool(final),
-            "final_result": final,
-        }
-    ), 200
+    return jsonify({
+        "success": True,
+        "official_id": official_id,
+        "election_id": election_id,
+        "approved_count": len(approved_ids),
+        "threshold_reached": len(approved_ids) >= 3,
+        "result_ready": bool(final),
+        "final_result": final,
+    }), 200
+
+
+# Task 6: SSE endpoint for live admin dashboard
+@app.route("/admin/stream", methods=["GET"])
+def admin_stream():
+    """
+    Server-Sent Events stream: pushes a live vote-count JSON blob
+    whenever the change-stream callback fires a new vote insert.
+    """
+    import json as _json
+    import time as _time
+
+    election_id = request.args.get("election_id", DEFAULT_ELECTION_ID)
+    live_counts = app.config.get("LIVE_VOTE_COUNTS", {})
+
+    def _generate():
+        last_sent = {}
+        while True:
+            current = live_counts.get(election_id, {})
+            if current != last_sent:
+                last_sent = dict(current)
+                yield f"data: {_json.dumps({'election_id': election_id, 'counts': current})}\n\n"
+            _time.sleep(1)
+
+    return Response(stream_with_context(_generate()),
+                    mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# Task 2: standalone aggregation endpoints for admin tooling
+@app.route("/admin/analytics", methods=["GET"])
+def admin_analytics():
+    """Returns facet stats + turnout timeline via aggregation pipelines."""
+    active = _get_active_election()
+    election_id = request.args.get("election_id") or (active["election_id"] if active else DEFAULT_ELECTION_ID)
+    return jsonify({
+        "election_id": election_id,
+        "facet":   agg_dashboard_facet(db, election_id),
+        "turnout": agg_turnout_per_hour(db, election_id),
+        "per_candidate": agg_votes_per_candidate(db, election_id),
+    }), 200
+
+
+# Task 7: audit log endpoint for admin
+@app.route("/admin/audit-logs", methods=["GET"])
+def admin_audit_logs():
+    limit = int(request.args.get("limit", 100))
+    logs = list(
+        db["audit_logs"].find({}, {"_id": 0})
+        .sort("timestamp", DESCENDING)
+        .limit(limit)
+    )
+    # convert datetime to string for JSON
+    for log in logs:
+        if isinstance(log.get("timestamp"), datetime):
+            log["timestamp"] = log["timestamp"].isoformat()
+    failed_per_hour = agg_failed_logins_per_hour(db)
+    for row in failed_per_hour:
+        if isinstance(row.get("hour"), datetime):
+            row["hour"] = row["hour"].isoformat()
+    return jsonify({"logs": logs, "failed_logins_per_hour": failed_per_hour}), 200
 
 
 @app.route("/official/status", methods=["GET"])

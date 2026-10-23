@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request, redirect, session, url_for
+from flask import Flask, render_template, request, redirect, session, url_for, Response, stream_with_context
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import bcrypt
 import os
+import sys
 import shutil
 import tempfile
 from dotenv import load_dotenv
@@ -24,6 +25,21 @@ import secrets
 from functools import wraps
 from bson import ObjectId
 from scipy.spatial.distance import cosine
+
+# Add backend to path so we can import mongo_features
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "voting_system_crypto", "backend"))
+
+from mongo_features import (
+    store_otp_session,
+    verify_otp_session,
+    record_login_attempt,
+    is_account_locked,
+    audit,
+    store_file_gridfs,
+    retrieve_file_gridfs,
+    list_voter_files_gridfs,
+    transactional_approve_official,
+)
 
 try:
     import pytesseract
@@ -450,6 +466,20 @@ def register():
 
         hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
 
+        # Task 8: store face photo in GridFS
+        face_grid_id = None
+        try:
+            face_bytes = base64.b64decode(
+                face_image.split(",", 1)[1] if "," in face_image else face_image
+            )
+            face_grid_id = store_file_gridfs(
+                db, face_bytes,
+                filename=f"face_{aadhaar}.jpg",
+                metadata={"aadhaar": aadhaar, "type": "registration_face"}
+            )
+        except Exception:
+            pass  # GridFS is supplementary; don't block registration
+
         voter_users.insert_one({
             "aadhaar": aadhaar,
             "name": name,
@@ -461,8 +491,12 @@ def register():
             "role": "voter",
             "password": hashed_password,
             "face_encoding": face_encoding.tolist() if hasattr(face_encoding, 'tolist') else face_encoding,
-            "registered_at": datetime.utcnow()
+            "face_grid_id": face_grid_id,   # Task 8: GridFS reference
+            "registered_at": datetime.utcnow(),
         })
+
+        # Task 7: audit registration
+        audit(db, "voter_registered", aadhaar=aadhaar, success=True)
 
         # Also register the voter with the post-quantum election server
         private_key = None
@@ -481,7 +515,10 @@ def register():
             if resp.status_code == 200:
                 reg_result = resp.json()
                 private_key = reg_result.get("private_key")
-        except Exception:
+            else:
+                print(f"[Register] Backend returned {resp.status_code}: {resp.text}")
+        except Exception as e:
+            print(f"[Register] Backend call failed: {e}")
             private_key = None
 
         return render_template("register_success.html", name=name, private_key=private_key)
@@ -519,8 +556,14 @@ def login():
         if not _allowed_aadhaar_upload(aadhaar_card.filename):
             return render_template("login.html", error="Unsupported Aadhaar upload. Please upload PNG/JPG/JPEG/WEBP.")
 
+        # Task 5: lockout after 5 failed attempts in 15-min window
+        if is_account_locked(db, aadhaar):
+            audit(db, "login_locked", aadhaar=aadhaar, success=False)
+            return render_template("login.html", error="Account temporarily locked due to too many failed attempts. Try again in 15 minutes.")
+
         user = get_voter_account(aadhaar)
         if not user:
+            record_login_attempt(db, aadhaar, success=False)
             return render_template("login.html", error="User not found. Please register first.")
 
         # Ensure entered DOB matches the stored DOB from registration
@@ -529,10 +572,21 @@ def login():
             return render_template("login.html", error="DOB does not match the registered record.")
 
         if not bcrypt.checkpw(password.encode(), user["password"]):
+            record_login_attempt(db, aadhaar, success=False)
+            audit(db, "login_attempt", aadhaar=aadhaar, success=False, details={"reason": "wrong_password"})
             return render_template("login.html", error="Wrong password.")
 
         # OCR Aadhaar card and verify Aadhaar + DOB match the uploaded card
         try:
+            # Task 8: store Aadhaar card image in GridFS before reading it
+            aadhaar_card.seek(0)
+            card_bytes = aadhaar_card.read()
+            store_file_gridfs(
+                db, card_bytes,
+                filename=f"aadhaar_{aadhaar}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.jpg",
+                metadata={"aadhaar": aadhaar, "type": "login_aadhaar_card"}
+            )
+            aadhaar_card.seek(0)  # rewind for OCR
             ocr = extract_aadhaar_details_from_image(aadhaar_card)
         except Exception as e:
             return render_template("login.html", error=f"Aadhaar OCR failed: {str(e)}")
@@ -591,12 +645,14 @@ def verify_face_login():
         return render_template("face_verify.html", aadhaar=aadhaar, error="Face not detected. Please capture again.", action_url="/verify_face_login")
 
     if not compare_faces(user["face_encoding"], captured_encoding):
+        audit(db, "face_verify_failure", aadhaar=aadhaar, success=False)
         return render_template("face_verify.html", aadhaar=aadhaar, error="Face mismatch. Please try again in good lighting.", action_url="/verify_face_login")
 
-    # Face verified, now send OTP
+    # Face verified — store OTP in TTL collection (Task 5: hashed, auto-expires in 5 min)
     otp = str(random.randint(100000, 999999))
-    voter_users.update_one({"aadhaar": aadhaar}, {"$set": {"otp": otp}})
-    users.update_one({"aadhaar": aadhaar}, {"$set": {"otp": otp}})
+    store_otp_session(db, aadhaar, otp)
+    # Audit: face verification success (Task 7)
+    audit(db, "face_verify_success", aadhaar=aadhaar, success=True)
     try:
         send_otp_email(user["email"], otp)
     except Exception as e:
@@ -627,10 +683,15 @@ def verify_otp():
     aadhaar = request.form["aadhaar"]
     entered_otp = request.form["otp"]
 
-    user = get_voter_account(aadhaar)
+    # Task 5: verify against TTL-backed hashed OTP session
+    ok, reason = verify_otp_session(db, aadhaar, entered_otp)
+    if not ok:
+        audit(db, "otp_failure", aadhaar=aadhaar, success=False, details={"reason": reason})
+        return render_template("verify_otp.html", aadhaar=aadhaar, error=reason)
 
-    if user["otp"] != entered_otp:
-        return render_template("verify_otp.html", aadhaar=aadhaar, error="Invalid OTP. Please try again.")
+    audit(db, "otp_success", aadhaar=aadhaar, success=True)
+
+    user = get_voter_account(aadhaar)
 
     current_user_agent = request.headers.get("User-Agent", "")
     current_device_id = normalize_device_fingerprint(current_user_agent)
@@ -648,14 +709,12 @@ def verify_otp():
         stored_device_id = user.get("device_id", "")
         stored_normalized = normalize_device_fingerprint(stored_device_id)
 
-        # Backward-compatible compare: handle both legacy raw UA and new normalized format.
         is_same_device = (
             stored_device_id == current_device_id
             or stored_normalized == current_device_id
         )
 
         if not is_same_device:
-            # Allow controlled rotation only after successful current MFA progression.
             if session.get("face_verified") and session.get("aadhaar") == aadhaar:
                 voter_users.update_one(
                     {"aadhaar": aadhaar},
@@ -672,17 +731,17 @@ def verify_otp():
                     },
                 )
             else:
+                audit(db, "device_mismatch", aadhaar=aadhaar, success=False)
                 return render_template("verify_otp.html", aadhaar=aadhaar, error="Unauthorized device. Please login from your registered device/browser.")
 
     session["aadhaar"] = aadhaar
     session["role"] = user.get("role", "voter")
 
-    # If face was already verified in the login flow, complete authentication now.
     if session.get("face_verified"):
         session["authenticated"] = True
+        audit(db, "login_success", aadhaar=aadhaar, success=True)
         return redirect(url_for("vote"))
 
-    # Otherwise, proceed to face verification (legacy order)
     return render_template("face_verify.html", aadhaar=aadhaar, error=None, action_url="/verify_face")
 
 # ---------------- FACE MATCH ----------------
@@ -885,21 +944,28 @@ def admin_dashboard():
                 json={"triggered_by": "admin", "run_crypto_pipeline": False},
                 timeout=45,
             )
-            data = count_resp.json()
-            if count_resp.status_code == 200:
-                encrypted_count = data.get("encrypted_result")
-                count_results = data.get("results") or {}
-                winner = data.get("winner")
-                extra_details = {
-                    "election_id": data.get("election_id"),
-                    "total_votes": data.get("total_votes"),
-                    "result_ready": data.get("result_ready"),
-                    "approved_officials": data.get("threshold_approved_count"),
-                    "phases_completed": data.get("phases_completed"),
-                }
-                message = "Counting completed successfully."
-            else:
-                error = data.get("error", "Failed to trigger counting")
+            # Guard against empty or non-JSON responses
+            try:
+                data = count_resp.json()
+            except Exception:
+                data = {}
+                error = f"Backend returned status {count_resp.status_code} with non-JSON body: {count_resp.text[:300]}"
+
+            if not error:
+                if count_resp.status_code == 200:
+                    encrypted_count = data.get("encrypted_result")
+                    count_results = data.get("results") or {}
+                    winner = data.get("winner")
+                    extra_details = {
+                        "election_id": data.get("election_id"),
+                        "total_votes": data.get("total_votes"),
+                        "result_ready": data.get("result_ready"),
+                        "approved_officials": data.get("threshold_approved_count"),
+                        "phases_completed": data.get("phases_completed"),
+                    }
+                    message = "Counting completed successfully."
+                else:
+                    error = data.get("error", f"Backend error (HTTP {count_resp.status_code})")
         except Exception as e:
             error = f"Could not reach backend: {str(e)}"
 
@@ -962,42 +1028,31 @@ def admin_manage_officials():
                 if find_existing_account_by_aadhaar(req["aadhaar"]):
                     raise ValueError("A user already exists with this Aadhaar.")
 
-                official_auth_users.insert_one(
-                    {
-                        "aadhaar": req["aadhaar"],
-                        "name": req.get("name") or req.get("official_id"),
-                        "password": req["password_hash"],
-                        "role": "official",
-                        "official_id": req["official_id"],
-                        "created_at": datetime.utcnow(),
-                    }
-                )
+                auth_user_doc = {
+                    "aadhaar": req["aadhaar"],
+                    "name": req.get("name") or req.get("official_id"),
+                    "password": req["password_hash"],
+                    "role": "official",
+                    "official_id": req["official_id"],
+                    "created_at": datetime.utcnow(),
+                }
+                official_doc = {
+                    "official_id": req["official_id"],
+                    "name": req.get("name") or req.get("official_id"),
+                    "key_share": req.get("secret_key"),
+                    "secret_key": req.get("secret_key"),
+                    "has_approved": False,
+                    "approved_at": None,
+                    "election_id": "ELECTION_001",
+                }
 
-                # Ensure this official exists in threshold approval registry with their secret key
-                existing_official_doc = officials.find_one({"official_id": req["official_id"]})
-                if not existing_official_doc:
-                    officials.insert_one(
-                        {
-                            "official_id": req["official_id"],
-                            "name": req.get("name") or req.get("official_id"),
-                            "key_share": req.get("secret_key"),
-                            "secret_key": req.get("secret_key"),
-                            "has_approved": False,
-                            "approved_at": None,
-                            "election_id": "ELECTION_001",
-                        }
-                    )
+                # Task 3: single ACID transaction — request + auth_user + official
+                transactional_approve_official(client, db, request_id, auth_user_doc, official_doc)
 
-                official_requests.update_one(
-                    {"_id": req["_id"]},
-                    {
-                        "$set": {
-                            "status": "approved",
-                            "reviewed_at": datetime.utcnow(),
-                            "reviewed_by": session.get("aadhaar"),
-                        }
-                    },
-                )
+                # Task 7: audit
+                audit(db, "official_approved", aadhaar=req["aadhaar"], success=True,
+                      details={"official_id": req["official_id"],
+                               "reviewed_by": session.get("aadhaar")})
                 message = f"Official request approved for {req['official_id']}."
 
             elif action == "reject_request":
@@ -1240,17 +1295,31 @@ def admin_end_election():
 def admin_view_blockchain():
     blocks = []
     error = None
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = 10
+    total = 0
     try:
-        resp = requests.get(f"{ELECTION_API_URL}/admin/view-blockchain", timeout=10)
+        resp = requests.get(
+            f"{ELECTION_API_URL}/admin/view-blockchain",
+            params={"page": page, "per_page": per_page},
+            timeout=10,
+        )
         data = resp.json()
         if resp.status_code == 200:
             blocks = data.get("blocks", [])
+            total = data.get("count", len(blocks))
         else:
             error = data.get("error", "Could not fetch blockchain")
     except Exception as e:
         error = f"Could not reach backend: {str(e)}"
 
-    return render_template("admin_blockchain.html", blocks=blocks, error=error)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return render_template(
+        "admin_blockchain.html",
+        blocks=blocks, error=error,
+        page=page, per_page=per_page,
+        total=total, total_pages=total_pages,
+    )
 
 
 @app.route("/admin/view-encrypted-votes", methods=["GET"])
@@ -1258,17 +1327,108 @@ def admin_view_blockchain():
 def admin_view_encrypted_votes():
     votes_data = []
     error = None
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = 20
+    total = 0
     try:
-        resp = requests.get(f"{ELECTION_API_URL}/admin/view-encrypted-votes", timeout=10)
+        resp = requests.get(
+            f"{ELECTION_API_URL}/admin/view-encrypted-votes",
+            params={"page": page, "per_page": per_page},
+            timeout=10,
+        )
         data = resp.json()
         if resp.status_code == 200:
             votes_data = data.get("votes", [])
+            total = data.get("count", len(votes_data))
         else:
             error = data.get("error", "Could not fetch encrypted votes")
     except Exception as e:
         error = f"Could not reach backend: {str(e)}"
 
-    return render_template("admin_encrypted_votes.html", votes=votes_data, error=error)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return render_template(
+        "admin_encrypted_votes.html",
+        votes=votes_data, error=error,
+        page=page, per_page=per_page,
+        total=total, total_pages=total_pages,
+    )
+
+
+# Task 7: Audit log UI — fetches from backend aggregation endpoint
+@app.route("/admin/audit-logs-ui", methods=["GET"])
+@require_role("admin")
+def admin_audit_logs_ui():
+    logs = []
+    failed_per_hour = []
+    try:
+        resp = requests.get(f"{ELECTION_API_URL}/admin/audit-logs", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            logs = data.get("logs", [])
+            failed_per_hour = data.get("failed_logins_per_hour", [])
+    except Exception:
+        pass
+    return render_template("admin_audit_logs.html", logs=logs, failed_per_hour=failed_per_hour)
+
+
+# Task 8: Admin GridFS image management UI
+@app.route("/admin/gridfs-images", methods=["GET"])
+@require_role("admin")
+def admin_gridfs_images():
+    """Admin UI to search and view GridFS images by voter aadhaar."""
+    aadhaar = request.args.get("aadhaar", "").strip()
+    files = []
+    error = None
+    
+    if aadhaar:
+        if not ensure_mongo_connection():
+            error = f"MongoDB connection failed: {mongo_error}"
+        else:
+            try:
+                from voting_system_crypto.backend.mongo_features import list_voter_files_gridfs
+                files = list_voter_files_gridfs(mongo_db, aadhaar)
+                if not files:
+                    error = f"No files found for Aadhaar: {aadhaar}"
+            except Exception as e:
+                error = f"Error retrieving files: {str(e)}"
+    
+    return render_template("admin_gridfs_images.html", aadhaar=aadhaar, files=files, error=error)
+
+
+@app.route("/admin/gridfs-image/<file_id>", methods=["GET"])
+@require_role("admin")
+def admin_retrieve_gridfs_image(file_id):
+    """Download/view a specific GridFS file by file_id."""
+    if not ensure_mongo_connection():
+        return f"MongoDB connection failed: {mongo_error}", 500
+    
+    try:
+        from voting_system_crypto.backend.mongo_features import retrieve_file_gridfs
+        from bson import ObjectId
+        
+        file_data = retrieve_file_gridfs(mongo_db, ObjectId(file_id))
+        if not file_data:
+            return "File not found", 404
+        
+        # Get file metadata for MIME type
+        file_doc = mongo_db["fs.files"].find_one({"_id": ObjectId(file_id)})
+        if not file_doc:
+            return "File metadata not found", 404
+        
+        filename = file_doc.get("filename", "image.jpg")
+        file_type = file_doc.get("metadata", {}).get("type", "image/jpeg")
+        
+        from flask import send_file
+        from io import BytesIO
+        
+        return send_file(
+            BytesIO(file_data),
+            mimetype=file_type,
+            as_attachment=False,
+            download_name=filename
+        )
+    except Exception as e:
+        return f"Error retrieving file: {str(e)}", 500
 
 
 # ---------------- OFFICIAL RBAC + APPROVAL ----------------

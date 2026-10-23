@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Audit Logs - Secure E-Voting</title>
+    <style>
+      body {
+        margin: 0; padding: 24px;
+        font-family: Arial, sans-serif;
+        background: radial-gradient(circle at top, #1a73e8 0, #0b1020 55%, #000 100%);
+        color: #e3f2fd; min-height: 100vh; box-sizing: border-box;
+      }
+      .container { max-width: 1100px; margin: 0 auto; }
+      .card {
+        background: rgba(0,0,0,0.78); border-radius: 18px;
+        padding: 22px; box-shadow: 0 18px 45px rgba(0,0,0,0.65);
+        margin-bottom: 16px;
+      }
+      h1 { font-size: 24px; margin: 0 0 6px; }
+      h3 { font-size: 16px; margin: 0 0 10px; }
+      .subtitle { font-size: 13px; color: #b0bec5; margin-bottom: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td {
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding: 8px 10px; text-align: left; vertical-align: top;
+      }
+      th { color: #81d4fa; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
+      tr:hover td { background: rgba(255,255,255,0.03); }
+      .pill {
+        display: inline-block; padding: 2px 8px; border-radius: 999px;
+        font-size: 11px; font-weight: 600;
+      }
+      .pill-ok  { background: rgba(76,175,80,.2);  color: #a5d6a7; border: 1px solid rgba(76,175,80,.5); }
+      .pill-err { background: rgba(244,67,54,.15); color: #ffcdd2; border: 1px solid rgba(244,67,54,.5); }
+      .mono { font-family: Consolas, monospace; }
+      .bar-wrap { display: flex; align-items: center; gap: 8px; }
+      .bar-bg { flex: 1; background: rgba(255,255,255,.08); border-radius: 4px; height: 8px; overflow: hidden; }
+      .bar-fill { height: 100%; background: #ef5350; border-radius: 4px; }
+      .btn {
+        border-radius: 999px; padding: 8px 18px; border: none;
+        font-size: 13px; cursor: pointer; text-decoration: none;
+        display: inline-block; margin-bottom: 10px;
+      }
+      .btn-secondary {
+        background: transparent; color: #e3f2fd;
+        border: 1px solid rgba(227,242,253,.6);
+      }
+      .empty { color: #546e7a; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+
+      <div class="card">
+        <h1>Audit Logs</h1>
+        <div class="subtitle">
+          All system events — logins, face checks, OTP attempts, votes, admin actions.
+          Stored in MongoDB with a 90-day TTL. Powered by aggregation pipelines.
+        </div>
+        <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+      </div>
+
+      <!-- Failed logins per hour (aggregation pipeline) -->
+      <div class="card">
+        <h3>Failed Logins per Hour</h3>
+        <div class="subtitle">Aggregation: <code>$match → $group($dateTrunc) → $sort</code></div>
+        {% if failed_per_hour %}
+          {% set max_fail = failed_per_hour | map(attribute='failures') | max %}
+          <table>
+            <thead><tr><th>Hour (UTC)</th><th>Failures</th><th>Volume</th></tr></thead>
+            <tbody>
+              {% for row in failed_per_hour %}
+              <tr>
+                <td class="mono">{{ row.hour }}</td>
+                <td>{{ row.failures }}</td>
+                <td>
+                  <div class="bar-wrap">
+                    <div class="bar-bg">
+                      <div class="bar-fill" style="width:{{ (row.failures / max_fail * 100) | int }}%"></div>
+                    </div>
+                    <span style="font-size:11px;color:#ef9a9a;">{{ row.failures }}</span>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">No failed login data yet.</p>
+        {% endif %}
+      </div>
+
+      <!-- Recent events -->
+      <div class="card">
+        <h3>Recent Events (last {{ logs | length }})</h3>
+        {% if logs %}
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp (UTC)</th>
+                <th>Event</th>
+                <th>Aadhaar</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in logs %}
+              <tr>
+                <td class="mono" style="white-space:nowrap;">{{ log.timestamp }}</td>
+                <td>{{ log.event }}</td>
+                <td class="mono">{{ log.aadhaar or '—' }}</td>
+                <td>
+                  {% if log.success %}
+                    <span class="pill pill-ok">ok</span>
+                  {% else %}
+                    <span class="pill pill-err">fail</span>
+                  {% endif %}
+                </td>
+                <td style="color:#b0bec5;">
+                  {% if log.details %}
+                    {% for k, v in log.details.items() %}
+                      <span>{{ k }}: {{ v }}</span><br>
+                    {% endfor %}
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">No audit events recorded yet.</p>
+        {% endif %}
+      </div>
+
+    </div>
+  </body>
+</html>

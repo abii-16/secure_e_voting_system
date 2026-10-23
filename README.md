@@ -219,6 +219,37 @@ python app.py
 
 ---
 
+## 🔐 MongoDB Security Features
+
+This project implements comprehensive MongoDB security features including:
+
+- **Schema Validation**: $jsonSchema validators on all collections
+- **Unique Indexes**: Double-vote prevention with compound indexes
+- **ACID Transactions**: Multi-document transactions for vote storage and official approval
+- **TTL Collections**: Auto-expiring OTP sessions (5 min) and login attempts (15 min)
+- **Audit Logging**: 90-day retention with aggregation pipelines
+- **GridFS Storage**: Secure file storage for Aadhaar images with admin-only access
+- **Data Encryption**: SHA-256 hashed OTPs, scrypt password hashing, voter ID anonymization
+
+### Security Documentation
+
+For detailed MongoDB security implementation including:
+- Separate database users (least-privilege access control)
+- Client-Side Field Level Encryption (CSFLE) setup
+- Queryable Encryption approach
+- Key management and KMS integration
+- Security testing procedures
+
+**See: [MONGODB_SECURITY.md](./MONGODB_SECURITY.md)**
+
+### MongoDB Tasks Progress
+
+Track all MongoDB feature implementations:
+
+**See: [MONGODB_TASKS.md](./MONGODB_TASKS.md)**
+
+---
+
 ## 📌 Project Objective
 
 This project demonstrates how post-quantum cryptography, blockchain, biometric authentication, homomorphic encryption, and distributed trust mechanisms can be integrated into a secure electronic voting system capable of resisting both classical and future quantum computing threats.

@@ -6,63 +6,89 @@
     <title>Encrypted Votes - Secure E-Voting</title>
     <style>
       body {
-        margin: 0;
-        padding: 24px;
-        font-family: Arial, sans-serif;
-        background: radial-gradient(
-          circle at top,
-          #1a73e8 0,
-          #0b1020 55%,
-          #000 100%
-        );
-        color: #e3f2fd;
-        min-height: 100vh;
-        box-sizing: border-box;
+        margin: 0; padding: 24px; font-family: Arial, sans-serif;
+        background: radial-gradient(circle at top, #1a73e8 0, #0b1020 55%, #000 100%);
+        color: #e3f2fd; min-height: 100vh; box-sizing: border-box;
       }
       .card {
-        max-width: 1100px;
-        margin: 0 auto;
-        background: rgba(0, 0, 0, 0.78);
-        border-radius: 18px;
-        padding: 22px;
-        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        max-width: 1100px; margin: 0 auto 14px;
+        background: rgba(0,0,0,0.78); border-radius: 18px;
+        padding: 22px; box-shadow: 0 18px 45px rgba(0,0,0,0.65);
       }
-      h1 {
-        margin: 0 0 10px;
-        font-size: 24px;
-      }
+      h1 { margin: 0 0 6px; font-size: 24px; }
+      .subtitle { font-size: 13px; color: #b0bec5; margin-bottom: 12px; }
       .error {
-        background: rgba(198, 40, 40, 0.12);
-        border: 1px solid rgba(244, 67, 54, 0.65);
-        color: #ffcdd2;
-        border-radius: 10px;
-        padding: 8px 10px;
-        font-size: 12px;
-        margin-bottom: 10px;
+        background: rgba(198,40,40,.12); border: 1px solid rgba(244,67,54,.65);
+        color: #ffcdd2; border-radius: 10px; padding: 8px 10px;
+        font-size: 12px; margin-bottom: 10px;
       }
-      pre {
-        background: rgba(6, 18, 32, 0.9);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 10px;
-        padding: 10px;
-        overflow: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 12px;
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th, td {
+        border-bottom: 1px solid rgba(255,255,255,.1);
+        padding: 8px 10px; text-align: left; vertical-align: top;
       }
-      a {
-        color: #81d4fa;
+      th { color: #81d4fa; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+      tr:hover td { background: rgba(255,255,255,.03); }
+      .mono { font-family: Consolas,monospace; word-break: break-all; }
+      .trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; font-family: Consolas,monospace; }
+      .pager { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+      .pager a, .pager span {
+        padding: 6px 14px; border-radius: 999px; font-size: 13px;
+        text-decoration: none; border: 1px solid rgba(255,255,255,.2); color: #e3f2fd;
       }
+      .pager a:hover { background: rgba(255,255,255,.08); }
+      .pager .cur { background: #1a73e8; border-color: #1a73e8; }
+      a { color: #81d4fa; }
     </style>
   </head>
   <body>
     <div class="card">
       <h1>Encrypted Votes</h1>
-      {% if error %}
-      <div class="error">{{ error }}</div>
+      <div class="subtitle">
+        Page {{ page }} of {{ total_pages }} — {{ total }} votes total.
+        Showing {{ per_page }} per page, newest first.
+      </div>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <p><a href="/admin/dashboard">← Back to Dashboard</a></p>
+
+      {% if votes %}
+        <table>
+          <thead>
+            <tr>
+              <th>Vote ID</th>
+              <th>Election</th>
+              <th>Timestamp</th>
+              <th>Receipt Hash</th>
+              <th>Encrypted Vote (truncated)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in votes %}
+            <tr>
+              <td class="mono">{{ v.vote_id }}</td>
+              <td>{{ v.election_id }}</td>
+              <td class="mono" style="white-space:nowrap;">{{ v.timestamp }}</td>
+              <td class="trunc" title="{{ v.receipt_hash }}">{{ v.receipt_hash }}</td>
+              <td class="trunc" title="{{ v.encrypted_vote }}">{{ v.encrypted_vote[:60] if v.encrypted_vote else '—' }}…</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div class="pager">
+          {% if page > 1 %}
+            <a href="?page={{ page - 1 }}&per_page={{ per_page }}">← Prev</a>
+          {% endif %}
+          <span class="cur">{{ page }} / {{ total_pages }}</span>
+          {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}&per_page={{ per_page }}">Next →</a>
+          {% endif %}
+          <span style="font-size:12px;color:#546e7a;">{{ total }} total votes</span>
+        </div>
+      {% else %}
+        <p style="color:#546e7a;">No encrypted votes found.</p>
       {% endif %}
-      <pre>{{ votes }}</pre>
-      <p><a href="/admin/dashboard">Back to Dashboard</a></p>
     </div>
   </body>
 </html>

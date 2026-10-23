@@ -109,10 +109,11 @@
                 • You will be asked to paste this key once when you cast your vote.
             </div>
         {% else %}
-            <p>Registration succeeded, but the post‑quantum election server could not return a private key.</p>
+            <p style="color:#a5d6a7;">✅ Your voter account has been created and saved successfully. You can proceed to login.</p>
             <div class="warning">
-                • Ensure the backend election server is running on <code>http://localhost:5000</code>.<br>
-                • Re‑register if you need a fresh private key.
+                • The post-quantum backend server (port 5000) is not running — private key could not be generated.<br>
+                • Start the backend: <code>python voting_system_crypto/backend/server.py</code><br>
+                • You can still login and vote once the backend is running.
             </div>
         {% endif %}
 
